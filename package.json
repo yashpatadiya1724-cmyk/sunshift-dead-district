@@ -1,0 +1,17 @@
+{
+  "name": "sunshift-dead-district",
+  "version": "1.0.0",
+  "description": "SUNSHIFT: Dead District - 3D Action Survival Game for GitHub Game Off 2026 (Theme: SHIFT)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

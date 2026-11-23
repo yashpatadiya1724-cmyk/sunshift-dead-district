@@ -1,0 +1,28 @@
+name: "✨ Feature Request"
+description: "Suggest an idea or enhancement for SUNSHIFT: Dead District"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: "Have an idea for a gameplay mechanic, weapon, or visual effect? Share it below!"
+  - type: input
+    id: title
+    attributes:
+      label: "Feature Summary"
+      placeholder: "e.g., Add a shotgun weapon with spread pellets"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem or Opportunity"
+      placeholder: "Is your feature request related to a problem or a gap in gameplay?"
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Proposed Solution"
+      placeholder: "Describe how you envision this feature working in-game..."
+    validations:
+      required: true

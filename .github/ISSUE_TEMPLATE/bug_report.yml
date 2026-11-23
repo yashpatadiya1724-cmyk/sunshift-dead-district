@@ -1,0 +1,43 @@
+name: "🐛 Bug Report"
+description: "Report a bug or performance hitch in SUNSHIFT: Dead District"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for taking the time to report an issue! Please provide as much detail as possible."
+  - type: input
+    id: browser
+    attributes:
+      label: "Browser & Operating System"
+      placeholder: "e.g., Chrome 122 on Windows 11 / Firefox 123 on macOS"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: "Bug Description"
+      placeholder: "Explain what went wrong..."
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: "Steps to Reproduce"
+      placeholder: |
+        1. Start game
+        2. Walk towards...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected Behavior"
+      placeholder: "What should have happened instead?"
+    validations:
+      required: true
+  - type: textarea
+    id: console_errors
+    attributes:
+      label: "Console Logs / Error Output"
+      placeholder: "Paste any errors from DevTools Console (F12) here..."

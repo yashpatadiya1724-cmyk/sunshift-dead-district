@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>SUNSHIFT: Dead District | 3D Action Survival</title>
+  
+  <!-- OpenGraph & Social Preview Meta Tags -->
+  <meta name="description" content="Survive the day-night shift cycle, fight fast infected, activate power relays, and extract in this atmospheric 3D horror action shooter." />
+  <meta property="og:title" content="SUNSHIFT: Dead District" />
+  <meta property="og:description" content="Survive the solar shift anomaly in an open city district. Playable in browser." />
+  <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#ffaa00" />
+
+  <!-- Emoji SVG Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☀️</text></svg>" />
+  
+  <link rel="stylesheet" href="./src/ui/style.css" />
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <!-- WebGL Incompatible Fallback -->
+  <noscript>
+    <div class="webgl-error-box">
+      <h2>JavaScript Required</h2>
+      <p>Please enable JavaScript in your browser to play SUNSHIFT: Dead District.</p>
+    </div>
+  </noscript>
+
+  <div id="webgl-fail-msg" class="webgl-error-box" style="display: none;">
+    <h2>WebGL 3D Not Supported</h2>
+    <p>Your browser or hardware acceleration appears to have WebGL disabled. Please enable hardware acceleration in your browser settings to play.</p>
+  </div>
+
+  <!-- 3D Canvas -->
+  <div id="game-container"></div>
+
+  <!-- Fullscreen Post Effects -->
+  <div id="damage-flash"></div>
+  <div id="shift-flash"></div>
+  <div id="low-hp-desaturate"></div>
+  <div id="damage-direction-arc"></div>
+  <div id="banner"></div>
+
+  <!-- Realtime FPS Counter (Toggle with F3) -->
+  <div id="fps-counter" style="display: none;">FPS: 60</div>
+
+  <!-- First-Time Tutorial Pop-up Hint -->
+  <div id="tutorial-box" style="display: none;">
+    <div id="tutorial-step-tag">TUTORIAL (1/5)</div>
+    <div id="tutorial-msg">Use [W, A, S, D] to move and hold [SHIFT] to sprint.</div>
+    <div class="tutorial-sub">[SPACE] to continue</div>
+  </div>
+
+  <!-- In-Game HUD (Visible only during PLAYING state) -->
+  <div id="ui-layer" style="display: none;">
+    
+    <div id="crosshair">
+      <div class="ch-line top"></div>
+      <div class="ch-line bottom"></div>
+      <div class="ch-line left"></div>
+      <div class="ch-line right"></div>
+      <div class="ch-dot"></div>
+    </div>
+
+    <!-- Proximity Drive Prompt -->
+    <div id="vehicle-prompt" style="display: none;">
+      PRESS <b>[F]</b> TO DRIVE MUSCLE CAR
+    </div>
+
+    <!-- Vehicle Dashboard -->
+    <div id="vehicle-hud" style="display: none;">
+      <div class="vh-item">
+        <span class="vh-label">SPEED</span>
+        <b id="vehicle-speed">0 KM/H</b>
+      </div>
+      <div class="vh-item">
+        <span class="vh-label">CAR INTEGRITY</span>
+        <div class="car-bar-wrap">
+          <div id="car-health-bar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Objective Tracker -->
+    <div id="objective-tracker">
+      <div id="obj-arrow">▲</div>
+      <div id="obj-info">
+        <span id="obj-label">RELAY</span>
+        <b id="obj-dist">--m</b>
+      </div>
+    </div>
+    
+    <!-- Top Shift Bar -->
+    <div id="top-bar">
+      <div id="shift-status">
+        <span id="shift-icon">☀️</span>
+        <span id="shift-name">DAY SHIFT (CALM)</span>
+        <div id="shift-timer-bar"><div id="shift-progress"></div></div>
+      </div>
+      <div id="mission-text">MISSION: COLLECT RELAYS (0/4)</div>
+    </div>
+
+    <!-- Top Right Stats -->
+    <div id="top-right-stats">
+      <div class="stat-pill">
+        <span class="pill-lbl">SURVIVAL:</span>
+        <b id="survival-timer" class="pill-val">00:00</b>
+      </div>
+      <div class="stat-pill">
+        <span class="pill-lbl">KILLS:</span>
+        <b id="kill-counter" class="pill-val">0</b>
+      </div>
+    </div>
+
+    <!-- Bottom Bar: Health, Weapon, Ammo, Reload, Flare -->
+    <div id="bottom-bar">
+      <div class="hud-box health-box">
+        <div class="hud-label-row">
+          <span class="hud-label">HEALTH</span>
+          <span id="health-text" class="hud-sublabel">100 / 100</span>
+        </div>
+        <div class="bar-container"><div id="health-bar" class="hp-high"></div></div>
+      </div>
+
+      <div class="hud-box weapon-box">
+        <div class="hud-label-row">
+          <span id="weapon-name" class="hud-label">PISTOL</span>
+          <span id="ammo-val" class="hud-val">12 / ∞</span>
+        </div>
+        <div id="reload-bar-wrap" style="display: none;">
+          <div id="reload-progress-bar"></div>
+        </div>
+      </div>
+
+      <!-- UV Flare Cooldown Pill -->
+      <div class="hud-box flare-box">
+        <div class="hud-label">UV FLARE [Q]</div>
+        <div id="flare-status-txt">READY</div>
+        <div class="flare-bar-wrap"><div id="flare-cd-bar"></div></div>
+      </div>
+    </div>
+
+    <!-- Minimap Radar -->
+    <div id="minimap-container">
+      <canvas id="minimap-canvas" width="160" height="160"></canvas>
+      <div class="minimap-label">DISTRICT RADAR</div>
+    </div>
+
+    <div id="controls-hint">
+      [W,A,S,D] Move | [1,2,3] Weapons | [R] Reload | [Q] Flare | [F] Car | [Shift] Sprint | [Space] Jump | [Esc] Pause
+    </div>
+  </div>
+
+  <!-- UI Menu Overlay -->
+  <div id="menu-container">
+    
+    <!-- 1. Loading Screen -->
+    <div id="loading-screen" class="menu-card">
+      <div class="glitch-title">SUNSHIFT</div>
+      <div class="subtitle">DEAD DISTRICT</div>
+      <div class="loading-bar-wrap">
+        <div id="loading-bar-fill"></div>
+      </div>
+      <p id="loading-text">INITIALIZING ENGINE...</p>
+    </div>
+
+    <!-- 2. Main Menu -->
+    <div id="main-menu" class="menu-card" style="display: none;">
+      <h1 class="main-title">SUNSHIFT</h1>
+      <h2 class="sub-title">DEAD DISTRICT</h2>
+      <div class="menu-btn-stack">
+        <button id="btn-play" class="cyber-btn primary">PLAY CAMPAIGN</button>
+        <button id="btn-controls" class="cyber-btn">CONTROLS</button>
+        <button id="btn-settings" class="cyber-btn">SETTINGS</button>
+        <button id="btn-credits" class="cyber-btn">CREDITS</button>
+      </div>
+      <div class="jam-tag">GITHUB GAME OFF 2026 // THEME: SHIFT</div>
+    </div>
+
+    <!-- 3. Pause Menu -->
+    <div id="pause-menu" class="menu-card" style="display: none;">
+      <h2 class="panel-title">GAME PAUSED</h2>
+      <div class="menu-btn-stack">
+        <button id="btn-resume" class="cyber-btn primary">RESUME GAME [ESC]</button>
+        <button id="btn-pause-settings" class="cyber-btn">SETTINGS</button>
+        <button id="btn-restart" class="cyber-btn">RESTART RUN</button>
+        <button id="btn-pause-menu" class="cyber-btn danger">MAIN MENU</button>
+      </div>
+    </div>
+
+    <!-- 4. Controls Panel -->
+    <div id="controls-panel" class="menu-card" style="display: none;">
+      <h2 class="panel-title">CONTROLS</h2>
+      <div class="controls-grid">
+        <div class="ctrl-row"><span>Move / Drive:</span> <b>W, A, S, D</b></div>
+        <div class="ctrl-row"><span>Weapons:</span> <b>1, 2, 3</b></div>
+        <div class="ctrl-row"><span>Reload Weapon:</span> <b>R Key</b></div>
+        <div class="ctrl-row"><span>Enter / Exit Car:</span> <b>F Key</b></div>
+        <div class="ctrl-row"><span>UV Flare Shockwave:</span> <b>Q Key</b></div>
+        <div class="ctrl-row"><span>Handbrake / Jump:</span> <b>Spacebar</b></div>
+        <div class="ctrl-row"><span>Aim & Look:</span> <b>Mouse Movement</b></div>
+        <div class="ctrl-row"><span>Shoot:</span> <b>Left Mouse Click</b></div>
+        <div class="ctrl-row"><span>Sprint:</span> <b>Shift (Hold)</b></div>
+        <div class="ctrl-row"><span>Toggle FPS Counter:</span> <b>F3 Key</b></div>
+        <div class="ctrl-row"><span>Pause Menu:</span> <b>Escape</b></div>
+      </div>
+      <button id="btn-controls-back" class="cyber-btn btn-back">BACK</button>
+    </div>
+
+    <!-- 5. Settings Panel -->
+    <div id="settings-panel" class="menu-card" style="display: none;">
+      <h2 class="panel-title">SETTINGS</h2>
+      
+      <div class="setting-row">
+        <div class="setting-label">Master Volume:</div>
+        <input type="range" id="slider-volume" min="0" max="1" step="0.05" value="0.7" class="cyber-slider" />
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-label">Mouse Sensitivity:</div>
+        <input type="range" id="slider-sens" min="0.0005" max="0.006" step="0.0005" value="0.0022" class="cyber-slider" />
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-label">Field of View (FOV):</div>
+        <input type="range" id="slider-fov" min="60" max="90" step="1" value="75" class="cyber-slider" />
+      </div>
+
+      <div class="setting-row checkbox-row">
+        <span class="setting-label">Invert Mouse Y Axis</span>
+        <input type="checkbox" id="check-invert" class="cyber-checkbox" />
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-label">Graphics Quality:</div>
+        <div class="quality-selector">
+          <button class="btn-quality" data-quality="LOW">LOW</button>
+          <button class="btn-quality active" data-quality="MEDIUM">MEDIUM</button>
+          <button class="btn-quality" data-quality="HIGH">HIGH</button>
+        </div>
+      </div>
+
+      <button id="btn-settings-back" class="cyber-btn btn-back">SAVE & BACK</button>
+    </div>
+
+    <!-- 6. Credits Panel -->
+    <div id="credits-panel" class="menu-card" style="display: none;">
+      <h2 class="panel-title">CREDITS</h2>
+      <div class="credits-content">
+        <p>Built for <b>GitHub Game Off 2026</b></p>
+        <p>Theme: <b>SHIFT</b></p>
+        <hr />
+        <p><b>Engine:</b> Three.js (r160) & Vite</p>
+        <p><b>Audio:</b> Web Audio API Synthesizer</p>
+        <p><b>Author:</b> yashpatadiya1724-cmyk</p>
+      </div>
+      <button id="btn-credits-back" class="cyber-btn btn-back">BACK</button>
+    </div>
+
+    <!-- 7. Game Over / Victory Panel -->
+    <div id="gameover-panel" class="menu-card" style="display: none;">
+      <h1 id="gameover-title" class="title-win">YOU SURVIVED</h1>
+      <p id="gameover-subtitle">District evacuated successfully.</p>
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-num" id="stat-time">00:00</div>
+          <div class="stat-lbl">Time Survived</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num" id="stat-kills">0</div>
+          <div class="stat-lbl">Zombies Purged</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num" id="stat-relays">0 / 4</div>
+          <div class="stat-lbl">Relays Secured</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num" id="stat-shifts">0</div>
+          <div class="stat-lbl">Shifts Survived</div>
+        </div>
+      </div>
+      <div class="menu-btn-stack">
+        <button id="btn-play-again" class="cyber-btn primary">PLAY AGAIN</button>
+        <button id="btn-over-menu" class="cyber-btn danger">MAIN MENU</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
