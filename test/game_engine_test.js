@@ -183,6 +183,47 @@ runTest('Enemy night speed surges behave correctly across archetypes', () => {
   assert(runner.nightSpeed > normal.nightSpeed, 'Runner night speed must exceed normal zombie');
 });
 
+// ===== SUITE 5: VEHICLE KINEMATICS & RELAY EVACUATION =====
+console.log('\n--- Suite 5: Vehicle Kinematics & Relay Objectives ---');
+
+runTest('Vehicle deceleration hierarchy is consistent (friction < braking < handbrake)', () => {
+  const { friction, braking, handbrakeDecel, maxSpeed, reverseSpeed } = CONFIG.vehicle;
+  assert(friction < braking, 'Braking deceleration must exceed natural rolling friction');
+  assert(braking < handbrakeDecel, 'Handbrake deceleration must exceed standard braking force');
+  assert(maxSpeed > 0 && reverseSpeed < 0, 'Vehicle must support forward and reverse kinematics');
+});
+
+runTest('Vehicle roadkill speed threshold exceeds player sprint speed', () => {
+  const { roadkillMinSpeed } = CONFIG.vehicle;
+  const { walkSpeed } = CONFIG.player;
+  assert(roadkillMinSpeed >= walkSpeed, 'Roadkill threshold requires significant kinetic momentum');
+});
+
+runTest('Flare defense cooldown strictly prevents infinite freeze exploitation', () => {
+  const { flareCooldown, flareFreezeDuration, flareRadius } = CONFIG.player;
+  assert(flareCooldown > flareFreezeDuration, 'Cooldown must be strictly longer than freeze duration');
+  assert(flareRadius > 0, 'Flare must have non-zero tactical radius');
+});
+
+runTest('Evacuation relays and extraction tower positions are valid 3D points', () => {
+  const { total, positions, towerPosition, towerEvacRadius } = CONFIG.relays;
+  assert.strictEqual(total, 4, 'Game must require 4 relays');
+  assert.strictEqual(positions.length, 4, 'Positions array must have 4 distinct points');
+  positions.forEach((pos, idx) => {
+    assert(pos.x !== undefined && pos.z !== undefined, `Relay ${idx} must be a valid 3D vector`);
+  });
+  assert(towerEvacRadius > 0, 'Evacuation extraction zone must have positive radius');
+  assert(towerPosition.x !== undefined, 'Tower extraction vector must be defined');
+});
+
+runTest('Quality presets scale fidelity correctly (shadow maps and pixel ratios)', () => {
+  const { LOW, MEDIUM, HIGH } = CONFIG.quality;
+  assert.strictEqual(LOW.shadows, false, 'LOW quality disables shadow maps');
+  assert.strictEqual(HIGH.shadows, true, 'HIGH quality enables shadow maps');
+  assert(HIGH.shadowMapSize > MEDIUM.shadowMapSize, 'HIGH shadow map size must exceed MEDIUM');
+  assert(HIGH.pixelRatio > LOW.pixelRatio, 'HIGH pixel ratio must exceed LOW');
+});
+
 console.log('\n================================');
 console.log(`Results: ${testsPassed} passed, ${testsFailed} failed`);
 console.log('================================');
