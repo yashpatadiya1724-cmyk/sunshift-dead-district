@@ -150,8 +150,12 @@ export class Menu {
     if (this.sliderVolume) {
       this.sliderVolume.addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
-        this.game.settings.volume = val;
-        if (this.game.sound) this.game.sound.setMasterVolume(val);
+        if (typeof this.game.setVolume === 'function') {
+          this.game.setVolume(val);
+        } else {
+          this.game.settings.volume = val;
+          if (this.game.sound) this.game.sound.setMasterVolume(val);
+        }
       });
     }
 
@@ -159,8 +163,12 @@ export class Menu {
     if (this.sliderSens) {
       this.sliderSens.addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
-        this.game.settings.sensitivity = val;
-        if (this.game.player) this.game.player.sensitivity = val;
+        if (typeof this.game.setSensitivity === 'function') {
+          this.game.setSensitivity(val);
+        } else {
+          this.game.settings.sensitivity = val;
+          if (this.game.player) this.game.player.sensitivity = val;
+        }
       });
     }
 
@@ -168,10 +176,14 @@ export class Menu {
     if (this.sliderFov) {
       this.sliderFov.addEventListener('input', (e) => {
         const val = parseInt(e.target.value, 10);
-        this.game.settings.fov = val;
-        if (this.game.camera) {
-          this.game.camera.fov = val;
-          this.game.camera.updateProjectionMatrix();
+        if (typeof this.game.setFov === 'function') {
+          this.game.setFov(val);
+        } else {
+          this.game.settings.fov = val;
+          if (this.game.camera) {
+            this.game.camera.fov = val;
+            this.game.camera.updateProjectionMatrix();
+          }
         }
       });
     }
@@ -180,8 +192,12 @@ export class Menu {
     if (this.checkInvert) {
       this.checkInvert.addEventListener('change', (e) => {
         const val = e.target.checked;
-        this.game.settings.invertY = val;
-        if (this.game.player) this.game.player.invertY = val;
+        if (typeof this.game.setInvertY === 'function') {
+          this.game.setInvertY(val);
+        } else {
+          this.game.settings.invertY = val;
+          if (this.game.player) this.game.player.invertY = val;
+        }
       });
     }
 
@@ -198,10 +214,10 @@ export class Menu {
         const q = btn.dataset.quality;
         this.qualityBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        if (typeof this.game.setQuality === 'function') {
-          this.game.setQuality(q);
-        } else if (typeof this.game.applyQuality === 'function') {
+        if (typeof this.game.applyQuality === 'function') {
           this.game.applyQuality(q);
+        } else if (typeof this.game.setQuality === 'function') {
+          this.game.setQuality(q);
         }
       });
     });

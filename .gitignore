@@ -37,3 +37,5 @@ Thumbs.db
 # Vite cache & temp files
 .vite/
 .turbo/
+
+scratch/

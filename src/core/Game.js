@@ -122,10 +122,7 @@ export class Game {
       vignettePass.uniforms['offset'].value = 1.05;
       vignettePass.uniforms['darkness'].value = 1.25;
       this.composer.addPass(vignettePass);
-
-      const outputPass = new OutputPass();
-      outputPass.renderToScreen = true;
-      this.composer.addPass(outputPass);
+      this.composer.addPass(new OutputPass());
     } catch (e) {
       console.warn('EffectComposer initialization failed, falling back to WebGLRenderer:', e);
       this.composer = null;
@@ -388,6 +385,15 @@ export class Game {
     this.extraNightZombies = [];
   }
 
+  requestPointerLockSafe() {
+    try {
+      const p = document.body.requestPointerLock();
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {});
+      }
+    } catch {}
+  }
+
   start() {
     if (this.sound) this.sound.startAmbient();
     this.state = GAME_STATES.PLAYING;
@@ -396,12 +402,7 @@ export class Game {
     this.stats.relaysCollected = 0;
     this.stats.shiftsSurvived = 0;
     this.input.reset();
-    try {
-      const lockPromise = document.body.requestPointerLock();
-      if (lockPromise && typeof lockPromise.catch === 'function') {
-        lockPromise.catch(() => {});
-      }
-    } catch (e) {}
+    this.requestPointerLockSafe();
     events.emit('stateChange', this.state);
 
     this.checkFirstTimeTutorial();
@@ -453,7 +454,7 @@ export class Game {
     if (this.state !== GAME_STATES.PAUSED) return;
     this.state = GAME_STATES.PLAYING;
     this.input.reset();
-    document.body.requestPointerLock();
+    this.requestPointerLockSafe();
     events.emit('stateChange', this.state);
   }
 
@@ -478,7 +479,7 @@ export class Game {
 
     this.state = GAME_STATES.PLAYING;
     this.input.reset();
-    document.body.requestPointerLock();
+    this.requestPointerLockSafe();
     events.emit('stateChange', this.state);
   }
 
@@ -544,7 +545,11 @@ export class Game {
   }
 
   renderPass() {
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   loop() {
