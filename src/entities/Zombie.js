@@ -100,6 +100,11 @@ export class Zombie {
     this.walkTimer = Math.random() * 10;
     this.frameCounter = Math.floor(Math.random() * 2);
 
+    // Stuck detection against geometry
+    this.stuckTimer = 0;
+    this.lastStuckPos = new THREE.Vector3();
+    this.hasLoggedStuck = false;
+
     this.mixer = null;
     this.actions = {};
 
@@ -343,6 +348,30 @@ export class Zombie {
       _tempTestPos.z += stepZ;
       if (!this.checkCollisions(_tempTestPos, cityColliders)) {
         this.mesh.position.z = _tempTestPos.z;
+      }
+
+      // Stuck detection against geometry (> 5s threshold)
+      if (this.lastStuckPos.distanceToSquared(this.mesh.position) < 0.04) {
+        this.stuckTimer += dt;
+        if (this.stuckTimer >= 5.0) {
+          if (!this.hasLoggedStuck) {
+            console.warn(`[Zombie Stuck] Zombie ${this.archetype?.name || 'normal'} stuck against geometry for > 5s at (${this.mesh.position.x.toFixed(1)}, ${this.mesh.position.z.toFixed(1)})`);
+            this.hasLoggedStuck = true;
+          }
+          // Slide tangent to obstacle to unstick
+          const perpX = -dirZ;
+          const perpZ = dirX;
+          _tempTestPos.copy(this.mesh.position);
+          _tempTestPos.x += perpX * currentSpeed * dt * 1.5;
+          _tempTestPos.z += perpZ * currentSpeed * dt * 1.5;
+          if (!this.checkCollisions(_tempTestPos, cityColliders)) {
+            this.mesh.position.copy(_tempTestPos);
+          }
+        }
+      } else {
+        this.stuckTimer = 0;
+        this.hasLoggedStuck = false;
+        this.lastStuckPos.copy(this.mesh.position);
       }
 
       // Face player
