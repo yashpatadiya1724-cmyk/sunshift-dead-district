@@ -220,16 +220,6 @@ export class Effects {
     }
   }
 
-  showDamageArc(angleRad) {
-    const arc = document.getElementById('damage-direction-arc');
-    if (!arc) return;
-    arc.style.transform = `translate(-50%, -50%) rotate(${angleRad}rad)`;
-    arc.style.opacity = '0.8';
-    setTimeout(() => {
-      arc.style.opacity = '0';
-    }, 300);
-  }
-
   showToast(msg) {
     let toast = document.getElementById('toast-notification');
     if (!toast) {
