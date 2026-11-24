@@ -152,8 +152,61 @@ export const CONFIG = {
 
   // Quality Presets
   quality: {
-    LOW: { shadows: false, shadowMapSize: 512, bloom: false, pixelRatio: 1.0 },
-    MEDIUM: { shadows: true, shadowMapSize: 1024, bloom: true, pixelRatio: 1.0 },
-    HIGH: { shadows: true, shadowMapSize: 2048, bloom: true, pixelRatio: 1.5 }
+    LOW: {
+      shadows: false,
+      shadowMapSize: 512,
+      bloom: false,
+      gtao: false,
+      smaa: false,
+      filmGrain: false,
+      rain: false,
+      wetAsphalt: false,
+      lightCones: false,
+      zombieCount: 16,
+      anisotropy: 1,
+      pixelRatio: 0.85
+    },
+    MEDIUM: {
+      shadows: false,
+      shadowMapSize: 1024,
+      bloom: true,
+      gtao: false,
+      smaa: false,
+      filmGrain: false,
+      rain: false,
+      wetAsphalt: false,
+      lightCones: true,
+      zombieCount: 20,
+      anisotropy: 2,
+      pixelRatio: 1.0
+    },
+    HIGH: {
+      shadows: true,
+      shadowMapSize: 1536,
+      bloom: true,
+      gtao: false,
+      smaa: false,
+      filmGrain: true,
+      rain: false,
+      wetAsphalt: false,
+      lightCones: true,
+      zombieCount: 20,
+      anisotropy: 4,
+      pixelRatio: 1.25
+    },
+    ULTRA: {
+      shadows: true,
+      shadowMapSize: 2048,
+      bloom: true,
+      gtao: true,
+      smaa: true,
+      filmGrain: true,
+      rain: true,
+      wetAsphalt: true,
+      lightCones: true,
+      zombieCount: 24,
+      anisotropy: 8,
+      pixelRatio: 1.5
+    }
   }
 };

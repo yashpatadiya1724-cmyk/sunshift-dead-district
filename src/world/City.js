@@ -8,6 +8,7 @@ export class City {
     this.windowMaterials = [];
     this.streetlightPositions = [];
     this.streetLightsPool = [];
+    this.lightCones = [];
 
     this.windowTexture = this.generateWindowTexture();
     this.buildCity();
@@ -41,11 +42,16 @@ export class City {
   buildCity() {
     // 1. Asphalt Ground
     const groundGeo = new THREE.PlaneGeometry(260, 260);
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0x1b1c1e });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
+    this.groundMat = new THREE.MeshStandardMaterial({
+      color: 0x1b1c1e,
+      roughness: 0.85,
+      metalness: 0.1
+    });
+    const ground = new THREE.Mesh(groundGeo, this.groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
+    this.ground = ground;
 
     // 2. Yellow Dashed Road Lines
     const roadLineMat = new THREE.MeshBasicMaterial({ color: 0xe0b020 });
@@ -127,6 +133,18 @@ export class City {
     const lampGeo = new THREE.BoxGeometry(0.6, 0.35, 0.6);
     const lampMat = new THREE.MeshBasicMaterial({ color: 0xffaa33, fog: false });
 
+    // Volumetric-like semi-transparent light cone
+    const coneGeo = new THREE.CylinderGeometry(0.25, 2.2, 5.8, 12, 1, true);
+    coneGeo.translate(0, -2.9, 0); // Apex at top
+    const coneMat = new THREE.MeshBasicMaterial({
+      color: 0xffaa33,
+      transparent: true,
+      opacity: 0.14,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide
+    });
+
     const coords = [-33, -11, 11, 33];
     coords.forEach(x => {
       coords.forEach(z => {
@@ -142,6 +160,12 @@ export class City {
         const lamp = new THREE.Mesh(lampGeo, lampMat);
         lamp.position.y = 6.0;
         group.add(lamp);
+
+        const cone = new THREE.Mesh(coneGeo, coneMat);
+        cone.position.y = 5.9;
+        cone.visible = false; // toggled by quality preset
+        group.add(cone);
+        this.lightCones.push(cone);
 
         this.scene.add(group);
         this.streetlightPositions.push(new THREE.Vector3(x + 8.5, 5.8, z + 8.5));
@@ -252,5 +276,34 @@ export class City {
       }
     }
     return false;
+  }
+
+  setWetAsphalt(isWet) {
+    if (this.groundMat) {
+      this.groundMat.roughness = isWet ? 0.18 : 0.85;
+      this.groundMat.metalness = isWet ? 0.65 : 0.1;
+      this.groundMat.needsUpdate = true;
+    }
+  }
+
+  setLightConesVisible(visible) {
+    for (let i = 0; i < this.lightCones.length; i++) {
+      this.lightCones[i].visible = !!visible;
+    }
+  }
+
+  setAnisotropy(val) {
+    const aniso = Math.min(val || 1, 16);
+    if (this.windowTexture) {
+      this.windowTexture.anisotropy = aniso;
+      this.windowTexture.needsUpdate = true;
+    }
+    for (let i = 0; i < this.windowMaterials.length; i++) {
+      const mat = this.windowMaterials[i];
+      if (mat.emissiveMap) {
+        mat.emissiveMap.anisotropy = aniso;
+        mat.emissiveMap.needsUpdate = true;
+      }
+    }
   }
 }

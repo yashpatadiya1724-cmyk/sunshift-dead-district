@@ -4,6 +4,7 @@ import { events } from '../core/Events.js';
 export class Menu {
   constructor(game) {
     this.game = game;
+    this.game.menu = this;
 
     // Cache Panel Elements
     this.container = document.getElementById('menu-container') || document.getElementById('menu-layer');
@@ -205,7 +206,7 @@ export class Menu {
       });
     }
 
-    // 5. Quality Presets (LOW / MEDIUM / HIGH)
+    // 5. Quality Presets (AUTO / LOW / MEDIUM / HIGH / ULTRA)
     this.qualityBtns.forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -216,13 +217,18 @@ export class Menu {
           }
         } catch {}
         const q = btn.dataset.quality;
-        this.qualityBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        if (typeof this.game.applyQuality === 'function') {
-          this.game.applyQuality(q);
-        } else if (typeof this.game.setQuality === 'function') {
-          this.game.setQuality(q);
+        if (q === 'AUTO') {
+          if (typeof this.game.setAutoQuality === 'function') {
+            this.game.setAutoQuality();
+          }
+        } else {
+          if (typeof this.game.applyQuality === 'function') {
+            this.game.applyQuality(q, false);
+          } else if (typeof this.game.setQuality === 'function') {
+            this.game.setQuality(q, false);
+          }
         }
+        this.updateTierDisplay();
       });
     });
   }
@@ -240,10 +246,24 @@ export class Menu {
     if (this.checkInvert && this.game.settings.invertY !== undefined) {
       this.checkInvert.checked = !!this.game.settings.invertY;
     }
+    this.updateTierDisplay();
+  }
+
+  updateTierDisplay() {
+    const isAuto = (this.game.settings.qualityMode === 'AUTO');
     if (this.qualityBtns) {
       this.qualityBtns.forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.quality === this.game.settings.quality);
+        if (isAuto) {
+          btn.classList.toggle('active', btn.dataset.quality === 'AUTO');
+        } else {
+          btn.classList.toggle('active', btn.dataset.quality === this.game.settings.quality);
+        }
       });
+    }
+    const tierDisplayEl = document.getElementById('quality-tier-display');
+    if (tierDisplayEl) {
+      const mode = isAuto ? 'AUTO' : 'MANUAL';
+      tierDisplayEl.innerText = `ACTIVE TIER: ${this.game.settings.quality} (${mode})`;
     }
   }
 

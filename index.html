@@ -43,6 +43,7 @@
 
   <!-- Realtime FPS Counter (Toggle with F3) -->
   <div id="fps-counter" style="display: none;">FPS: 60</div>
+  <div id="toast-notification"></div>
 
   <!-- First-Time Tutorial Pop-up Hint -->
   <!-- Cinematic Prologue Intro Overlay -->
@@ -281,10 +282,13 @@
       <div class="setting-row">
         <div class="setting-label">Graphics Quality:</div>
         <div class="quality-selector">
+          <button class="btn-quality active" data-quality="AUTO">AUTO</button>
           <button class="btn-quality" data-quality="LOW">LOW</button>
-          <button class="btn-quality active" data-quality="MEDIUM">MEDIUM</button>
+          <button class="btn-quality" data-quality="MEDIUM">MEDIUM</button>
           <button class="btn-quality" data-quality="HIGH">HIGH</button>
+          <button class="btn-quality" data-quality="ULTRA">ULTRA</button>
         </div>
+        <div id="quality-tier-display" style="font-size: 13px; color: #ffaa00; margin-top: 6px; letter-spacing: 0.5px; font-family: monospace;">ACTIVE TIER: MEDIUM (AUTO)</div>
       </div>
 
       <button id="btn-settings-back" class="cyber-btn btn-back">SAVE & BACK</button>
