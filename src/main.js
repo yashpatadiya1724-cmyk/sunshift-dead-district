@@ -4,21 +4,40 @@ import { Menu } from './ui/Menu.js';
 import { HUD } from './ui/HUD.js';
 
 function init() {
-  // 1. Initialize Game engine
-  const game = new Game();
+  console.log('[MAIN] Initializing SUNSHIFT engine...');
+  let game = null;
 
-  // 2. WebGL Guard: If WebGL is not supported, halt before instantiating HUD and Menu
-  if (!game.isWebGLSupported) {
-    console.error('WebGL is not supported on this browser/GPU. Engine aborted.');
-    return;
+  try {
+    // 1. Initialize Game engine
+    game = new Game();
+    window.__SUNSHIFT_GAME__ = game;
+
+    // 2. WebGL Guard: If WebGL is not supported, halt before instantiating HUD and Menu
+    if (!game.isWebGLSupported) {
+      console.error('WebGL is not supported on this browser/GPU. Engine aborted.');
+      return;
+    }
+
+    // 3. Initialize HUD and Menu UI layers
+    new HUD(game);
+    new Menu(game);
+
+    console.log('[MAIN] Engine, HUD, and Menu initialized successfully!');
+  } catch (err) {
+    console.error('[MAIN] Engine initialization error:', err);
+    try {
+      new Menu(game || {
+        state: 'MENU',
+        start: () => console.warn('Game engine initializing...'),
+        showMenu: () => {},
+        resume: () => {},
+        restart: () => window.location.reload(),
+        settings: { volume: 0.7, sensitivity: 0.0022, fov: 75, invertY: false, quality: 'MEDIUM' }
+      });
+    } catch (menuErr) {
+      console.error('[MAIN] Menu fallback error:', menuErr);
+    }
   }
-
-  // 3. Initialize HUD and Menu UI layers
-  const hud = new HUD(game);
-  const menu = new Menu(game);
-
-  // Expose game instance for debug/inspection if needed
-  window.__SUNSHIFT_GAME__ = game;
 }
 
 // Resilient initialization: execute immediately if DOM is already parsed

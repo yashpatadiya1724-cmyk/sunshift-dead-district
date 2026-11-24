@@ -544,15 +544,7 @@ export class Game {
   }
 
   renderPass() {
-    try {
-      if (this.composer) {
-        this.composer.render();
-      } else {
-        this.renderer.render(this.scene, this.camera);
-      }
-    } catch (e) {
-      this.renderer.render(this.scene, this.camera);
-    }
+    this.renderer.render(this.scene, this.camera);
   }
 
   loop() {
