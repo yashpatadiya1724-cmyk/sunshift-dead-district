@@ -66,6 +66,8 @@ export class ShiftSystem {
     this.isNight = false;
     this.timer = this.cycleDuration;
     this.lastWarningSec = -1; // Clear warning state
+    const flashEl = document.getElementById('shift-flash');
+    if (flashEl) flashEl.style.opacity = '0';
     this.applyDayInstant();
 
     if (this.sound) {

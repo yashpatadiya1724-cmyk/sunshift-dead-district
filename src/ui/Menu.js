@@ -83,7 +83,6 @@ export class Menu {
             e.preventDefault();
             e.stopPropagation();
           }
-          console.log(`[MENU] Clicked button #${id}`);
           try {
             if (this.game && this.game.sound) {
               if (typeof this.game.sound.playClick === 'function') {
