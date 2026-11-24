@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ProceduralTextures } from './ProceduralTextures.js';
+import { assets } from '../core/Assets.js';
 
 export class City {
   constructor(scene, renderer = null) {

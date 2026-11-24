@@ -2,28 +2,46 @@
 import { Game } from './core/Game.js';
 import { Menu } from './ui/Menu.js';
 import { HUD } from './ui/HUD.js';
+import { assets } from './core/Assets.js';
 
-function init() {
-  let game = null;
+async function init() {
+  const loadingScreen = document.getElementById('loading-screen');
+  const mainMenu = document.getElementById('main-menu');
+  const loadingBar = document.getElementById('loading-bar-fill');
+  const loadingText = document.getElementById('loading-text');
+
+  if (loadingScreen) {
+    loadingScreen.style.display = 'flex';
+  }
+  if (mainMenu) {
+    mainMenu.style.display = 'none';
+  }
 
   try {
-    // 1. Initialize Game engine
-    game = new Game();
+    // 1. Preload assets with real percentage progress
+    await assets.loadAll((ratio, itemId) => {
+      const pct = Math.round(ratio * 100);
+      if (loadingBar) loadingBar.style.width = `${pct}%`;
+      if (loadingText) loadingText.textContent = `LOADING ASSETS (${pct}%) — ${itemId.toUpperCase()}`;
+    });
+
+    // 2. Initialize Game engine
+    const game = new Game();
     window.__SUNSHIFT_GAME__ = game;
 
-    // 2. WebGL Guard: If WebGL is not supported, halt before instantiating HUD and Menu
+    // 3. WebGL Guard
     if (!game.isWebGLSupported) {
       console.error('WebGL is not supported on this browser/GPU. Engine aborted.');
       return;
     }
 
-    // 3. Initialize HUD and Menu UI layers
+    // 4. Initialize HUD and Menu UI layers
     new HUD(game);
     new Menu(game);
   } catch (err) {
     console.error('[MAIN] Engine initialization error:', err);
     try {
-      new Menu(game || {
+      new Menu({
         state: 'MENU',
         start: () => console.warn('Game engine initializing...'),
         showMenu: () => {},

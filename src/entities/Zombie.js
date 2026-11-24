@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { events } from '../core/Events.js';
+import { assets } from '../core/Assets.js';
 
 // Module-level scratch vectors to eliminate per-frame allocations
 const _tempTestPos = new THREE.Vector3();
@@ -99,57 +100,110 @@ export class Zombie {
     this.walkTimer = Math.random() * 10;
     this.frameCounter = Math.floor(Math.random() * 2);
 
-    // Build Natural PBR Rig scaled by Archetype using shared geometries & materials
-    this.mesh = new THREE.Group();
+    this.mixer = null;
+    this.actions = {};
 
-    // Torso (Capsule) - ONLY body casts shadow
-    this.bodyMesh = new THREE.Mesh(_bodyGeo, this.archetypeMats.body);
-    this.bodyMesh.position.y = 1.05;
-    this.bodyMesh.castShadow = true;
-    this.bodyMesh.receiveShadow = true;
-    this.mesh.add(this.bodyMesh);
+    // 1. Check if GLB Model Instance is available
+    const zombieInstance = assets ? assets.getInstance('zombie') : null;
+    if (zombieInstance) {
+      this.mesh = zombieInstance;
+      this.leftArm = this.mesh.getObjectByName('leftArm');
+      this.rightArm = this.mesh.getObjectByName('rightArm');
+      this.leftLeg = this.mesh.getObjectByName('leftLeg');
+      this.rightLeg = this.mesh.getObjectByName('rightLeg');
 
-    // Head (Sphere)
-    this.headMesh = new THREE.Mesh(_headGeo, this.archetypeMats.head);
-    this.headMesh.position.y = 1.75;
-    this.headMesh.castShadow = false; // Skip shadow pass for head to reduce draw calls
-    this.headMesh.receiveShadow = true;
-    this.mesh.add(this.headMesh);
+      const rawClips = assets.animations.get('zombie') || [];
+      if (rawClips.length > 0) {
+        this.mixer = new THREE.AnimationMixer(this.mesh);
+        const clipNames = rawClips.map(c => c.name);
+        console.info(`[Zombie ${this.archetype.name}] Animation clips:`, clipNames);
 
-    // Glowing Red Emissive Eyes (Spheres)
-    const leftEye = new THREE.Mesh(_eyeGeo, _sharedMats.EYE);
-    leftEye.position.set(-0.11, 1.78, 0.22);
-    leftEye.castShadow = false;
-    this.mesh.add(leftEye);
+        const findClip = (pattern, fallbackIdx) => {
+          return rawClips.find(c => pattern.test(c.name)) || rawClips[fallbackIdx % rawClips.length];
+        };
 
-    const rightEye = new THREE.Mesh(_eyeGeo, _sharedMats.EYE);
-    rightEye.position.set(0.11, 1.78, 0.22);
-    rightEye.castShadow = false;
-    this.mesh.add(rightEye);
+        const idleClip = findClip(/idle/i, 0);
+        const walkClip = findClip(/walk/i, 1);
+        const runClip = findClip(/run/i, 2);
+        const attackClip = findClip(/attack|hit|strike|punch/i, 3);
+        const deathClip = findClip(/death|die|fall/i, 4);
 
-    // Arms (Capsules)
-    this.leftArm = new THREE.Mesh(_armGeo, this.archetypeMats.limb);
-    this.leftArm.position.set(-0.48, 1.25, 0.35);
-    this.leftArm.rotation.x = -Math.PI / 2 + 0.1;
-    this.leftArm.castShadow = false;
-    this.mesh.add(this.leftArm);
+        if (idleClip) this.actions.idle = this.mixer.clipAction(idleClip);
+        if (walkClip) this.actions.walk = this.mixer.clipAction(walkClip);
+        if (runClip) this.actions.run = this.mixer.clipAction(runClip);
+        if (attackClip) this.actions.attack = this.mixer.clipAction(attackClip);
+        if (deathClip) {
+          this.actions.death = this.mixer.clipAction(deathClip);
+          this.actions.death.clampWhenFinished = true;
+          this.actions.death.loop = THREE.LoopOnce;
+        }
 
-    this.rightArm = new THREE.Mesh(_armGeo, this.archetypeMats.limb);
-    this.rightArm.position.set(0.48, 1.25, 0.35);
-    this.rightArm.rotation.x = -Math.PI / 2 - 0.1;
-    this.rightArm.castShadow = false;
-    this.mesh.add(this.rightArm);
+        if (this.actions.walk) this.actions.walk.play();
+      }
 
-    // Legs (Capsules)
-    this.leftLeg = new THREE.Mesh(_legGeo, _sharedMats.PANTS);
-    this.leftLeg.position.set(-0.20, 0.45, 0);
-    this.leftLeg.castShadow = false;
-    this.mesh.add(this.leftLeg);
+      this.mesh.traverse((node) => {
+        if (node.isMesh && node.material) {
+          node.material = node.material.clone();
+          node.castShadow = (node.position.y < 1.4 && node.position.y > 0.8);
+          node.receiveShadow = true;
 
-    this.rightLeg = new THREE.Mesh(_legGeo, _sharedMats.PANTS);
-    this.rightLeg.position.set(0.20, 0.45, 0);
-    this.rightLeg.castShadow = false;
-    this.mesh.add(this.rightLeg);
+          if (node.name.includes('head') || (node.geometry?.type === 'BoxGeometry' && node.position.y > 1.5)) {
+            node.material.color = new THREE.Color(this.archetype.headColor);
+            this.headMat = node.material;
+          } else if (!node.name.includes('Eye')) {
+            node.material.color = new THREE.Color(this.archetype.color);
+            this.bodyMat = node.material;
+          }
+        }
+      });
+    } else {
+      // Build Natural PBR Procedural Rig
+      this.mesh = new THREE.Group();
+
+      this.bodyMesh = new THREE.Mesh(_bodyGeo, this.archetypeMats.body);
+      this.bodyMesh.position.y = 1.05;
+      this.bodyMesh.castShadow = true;
+      this.bodyMesh.receiveShadow = true;
+      this.mesh.add(this.bodyMesh);
+
+      this.headMesh = new THREE.Mesh(_headGeo, this.archetypeMats.head);
+      this.headMesh.position.y = 1.75;
+      this.headMesh.castShadow = false;
+      this.headMesh.receiveShadow = true;
+      this.mesh.add(this.headMesh);
+
+      const leftEye = new THREE.Mesh(_eyeGeo, _sharedMats.EYE);
+      leftEye.position.set(-0.11, 1.78, 0.22);
+      leftEye.castShadow = false;
+      this.mesh.add(leftEye);
+
+      const rightEye = new THREE.Mesh(_eyeGeo, _sharedMats.EYE);
+      rightEye.position.set(0.11, 1.78, 0.22);
+      rightEye.castShadow = false;
+      this.mesh.add(rightEye);
+
+      this.leftArm = new THREE.Mesh(_armGeo, this.archetypeMats.limb);
+      this.leftArm.position.set(-0.48, 1.25, 0.35);
+      this.leftArm.rotation.x = -Math.PI / 2 + 0.1;
+      this.leftArm.castShadow = false;
+      this.mesh.add(this.leftArm);
+
+      this.rightArm = new THREE.Mesh(_armGeo, this.archetypeMats.limb);
+      this.rightArm.position.set(0.48, 1.25, 0.35);
+      this.rightArm.rotation.x = -Math.PI / 2 - 0.1;
+      this.rightArm.castShadow = false;
+      this.mesh.add(this.rightArm);
+
+      this.leftLeg = new THREE.Mesh(_legGeo, _sharedMats.PANTS);
+      this.leftLeg.position.set(-0.20, 0.45, 0);
+      this.leftLeg.castShadow = false;
+      this.mesh.add(this.leftLeg);
+
+      this.rightLeg = new THREE.Mesh(_legGeo, _sharedMats.PANTS);
+      this.rightLeg.position.set(0.20, 0.45, 0);
+      this.rightLeg.castShadow = false;
+      this.mesh.add(this.rightLeg);
+    }
 
     // Apply Archetype Scale Factor
     const s = this.archetype.scale;
@@ -169,14 +223,18 @@ export class Zombie {
 
   freeze(duration) {
     this.frozenTimer = duration;
-    this.bodyMesh.material = _sharedMats.FREEZE_BODY;
-    this.headMesh.material = _sharedMats.FREEZE_HEAD;
+    if (this.bodyMesh && this.headMesh) {
+      this.bodyMesh.material = _sharedMats.FREEZE_BODY;
+      this.headMesh.material = _sharedMats.FREEZE_HEAD;
+    } else {
+      if (this.bodyMat) this.bodyMat.color.setHex(0x0088ff);
+      if (this.headMat) this.headMat.color.setHex(0x6ec6ff);
+    }
   }
 
   startDawnFade() {
     if (this.isNightSpawn && !this.isDead) {
       this.isFading = true;
-      // Clone materials only when fading out opacity
       if (!this.hasClonedMaterials) {
         this.hasClonedMaterials = true;
         this.mesh.traverse((child) => {
@@ -185,6 +243,24 @@ export class Zombie {
             child.material.transparent = true;
           }
         });
+      }
+    }
+  }
+
+  updateAnimation(dt) {
+    if (this.isDead || this.frozenTimer > 0) return;
+
+    if (this.mixer) {
+      this.mixer.update(dt);
+    } else {
+      if (this.leftLeg && this.rightLeg) {
+        const legSwing = Math.sin(this.walkTimer) * 0.55;
+        this.leftLeg.rotation.x = legSwing;
+        this.rightLeg.rotation.x = -legSwing;
+      }
+      if (this.leftArm && this.rightArm) {
+        this.leftArm.rotation.x = -Math.PI / 2 + Math.sin(this.walkTimer) * 0.3;
+        this.rightArm.rotation.x = -Math.PI / 2 - Math.sin(this.walkTimer) * 0.3;
       }
     }
   }
@@ -212,8 +288,13 @@ export class Zombie {
     if (this.frozenTimer > 0) {
       this.frozenTimer -= dt;
       if (this.frozenTimer <= 0) {
-        this.bodyMesh.material = this.archetypeMats.body;
-        this.headMesh.material = this.archetypeMats.head;
+        if (this.bodyMesh && this.headMesh) {
+          this.bodyMesh.material = this.archetypeMats.body;
+          this.headMesh.material = this.archetypeMats.head;
+        } else {
+          if (this.bodyMat) this.bodyMat.color.setHex(this.archetype.color);
+          if (this.headMat) this.headMat.color.setHex(this.archetype.headColor);
+        }
       }
       return;
     }
@@ -222,7 +303,7 @@ export class Zombie {
     const dz = player.mesh.position.z - this.mesh.position.z;
     const horizontalDist = Math.sqrt(dx * dx + dz * dz);
 
-    // Requirement 9: Far (60+ unit) zombies skip mesh update and animation completely
+    // Far (60+ unit) zombies skip mesh update and animation completely
     if (horizontalDist > 60) {
       return;
     }
@@ -267,20 +348,19 @@ export class Zombie {
       // Face player
       this.mesh.rotation.y = Math.atan2(dirX, dirZ);
 
-      // Frustum check: don't animate zombies outside camera frustum
+      // Frustum & distance check for animations
       const inView = frustum ? frustum.containsPoint(this.mesh.position) : true;
-      if (inView) {
-        this.walkTimer += dt * 8;
-        const swing = Math.sin(this.walkTimer) * 0.45;
-        this.leftLeg.rotation.x = swing;
-        this.rightLeg.rotation.x = -swing;
-        this.leftArm.rotation.x = -Math.PI / 2 + swing * 0.4;
-        this.rightArm.rotation.x = -Math.PI / 2 - swing * 0.4;
+      if (inView && horizontalDist <= 40) {
+        this.walkTimer += dt * (isNight ? 10 : 6);
+        this.updateAnimation(dt);
       }
     } else {
-      // Idle reset
-      this.leftLeg.rotation.x = 0;
-      this.rightLeg.rotation.x = 0;
+      if (this.leftLeg) this.leftLeg.rotation.x = 0;
+      if (this.rightLeg) this.rightLeg.rotation.x = 0;
+      if (this.actions?.walk && this.actions.walk.isRunning()) {
+        this.actions.walk.stop();
+        if (this.actions.idle) this.actions.idle.play();
+      }
     }
 
     // Attack Player Logic
@@ -294,6 +374,9 @@ export class Zombie {
   }
 
   attack(player) {
+    if (this.actions?.attack) {
+      this.actions.attack.reset().play();
+    }
     if (player && typeof player.takeDamage === 'function') {
       player.takeDamage(this.damage, this.mesh ? this.mesh.position : null);
     }
@@ -320,12 +403,21 @@ export class Zombie {
   takeDamage(amt) {
     this.health -= amt;
 
-    this.headMesh.material = _sharedMats.FLASH_HEAD;
-    setTimeout(() => {
-      if (this.headMesh && !this.isDead) {
-        this.headMesh.material = this.frozenTimer > 0 ? _sharedMats.FREEZE_HEAD : this.archetypeMats.head;
-      }
-    }, 80);
+    if (this.headMesh) {
+      this.headMesh.material = _sharedMats.FLASH_HEAD;
+      setTimeout(() => {
+        if (this.headMesh && !this.isDead) {
+          this.headMesh.material = this.frozenTimer > 0 ? _sharedMats.FREEZE_HEAD : this.archetypeMats.head;
+        }
+      }, 80);
+    } else if (this.headMat) {
+      this.headMat.color.setHex(0xffffff);
+      setTimeout(() => {
+        if (this.headMat && !this.isDead) {
+          this.headMat.color.setHex(this.archetype.headColor);
+        }
+      }, 80);
+    }
 
     if (this.health <= 0 && !this.isDead) {
       this.die();
@@ -337,8 +429,16 @@ export class Zombie {
     if (this.sound && typeof this.sound.zombieDeath === 'function') {
       this.sound.zombieDeath();
     }
-    this.mesh.rotation.x = -Math.PI / 2;
-    this.mesh.position.y = 0.2;
+
+    if (this.actions?.death) {
+      if (this.actions.walk) this.actions.walk.stop();
+      if (this.actions.run) this.actions.run.stop();
+      this.actions.death.reset().play();
+    } else {
+      this.mesh.rotation.x = -Math.PI / 2;
+      this.mesh.position.y = 0.2;
+    }
+
     events.emit('zombieKilled', this);
   }
 
@@ -346,7 +446,6 @@ export class Zombie {
     if (this.isRemoved) return;
     this.isRemoved = true;
 
-    // Unsubscribe from global event bus
     if (this.unsubscribeFlare) {
       this.unsubscribeFlare();
       this.unsubscribeFlare = null;

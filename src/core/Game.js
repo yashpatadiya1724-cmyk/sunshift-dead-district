@@ -9,6 +9,8 @@ import { FilmPass } from 'three/examples/jsm/postprocessing/FilmPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
+import { ColorGradingShader } from './ColorGradingShader.js';
+import { assets } from './Assets.js';
 
 import { CONFIG } from '../config.js';
 import { events } from './Events.js';
@@ -161,6 +163,9 @@ export class Game {
       this.vignettePass.uniforms['darkness'].value = 1.25;
       this.composer.addPass(this.vignettePass);
 
+      this.colorGradingPass = new ShaderPass(ColorGradingShader);
+      this.composer.addPass(this.colorGradingPass);
+
       this.filmPass = new FilmPass(0.12, false);
       this.composer.addPass(this.filmPass);
 
@@ -174,7 +179,19 @@ export class Game {
       this.composer = null;
     }
 
-    // 4. Core Systems, Physical Sky, Atmosphere, Entities, Vehicle & Pickups
+    // 4. PMREMGenerator & HDRI Environment
+    this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+    this.pmremGenerator.compileEquirectangularShader();
+
+    const dayHdr = assets.get('env_day');
+    const nightHdr = assets.get('env_night');
+    this.dayEnvMap = dayHdr ? this.pmremGenerator.fromEquirectangular(dayHdr).texture : null;
+    this.nightEnvMap = nightHdr ? this.pmremGenerator.fromEquirectangular(nightHdr).texture : null;
+    if (this.dayEnvMap) {
+      this.scene.environment = this.dayEnvMap;
+    }
+
+    // 5. Core Systems, Physical Sky, Atmosphere, Entities, Vehicle & Pickups
     this.sound = new Sound();
     this.sound.setMasterVolume(this.settings.volume);
 
@@ -185,7 +202,18 @@ export class Game {
     this.skyLighting = new SkyLighting(this.scene, this.renderer, this.dirLight);
     this.atmosphere = new Atmosphere(this.scene);
 
-    this.shift = new ShiftSystem(this.scene, this.dirLight, this.hemiLight, this.bloomPass, this.city, this.sound, this.effects);
+    this.shift = new ShiftSystem(
+      this.scene,
+      this.dirLight,
+      this.hemiLight,
+      this.bloomPass,
+      this.city,
+      this.sound,
+      this.effects,
+      this.colorGradingPass,
+      this.dayEnvMap,
+      this.nightEnvMap
+    );
     this.player = new Player(this.scene, this.camera, this.input, this.sound, this.effects);
     this.player.sensitivity = this.settings.sensitivity;
     this.player.invertY = !!this.settings.invertY;
@@ -193,6 +221,9 @@ export class Game {
     this.vehicle = new Vehicle(this.scene, this.sound, this.effects);
     this.pickups = new PickupsManager(this.scene, this.sound);
     this.relays = new RelayManager(this.scene, this.sound);
+
+    this.cameraFrustum = new THREE.Frustum();
+    this.projScreenMatrix = new THREE.Matrix4();
 
     this.dialogue = new Dialogue(this.sound);
     this.missionManager = new MissionManager(this);
@@ -643,7 +674,6 @@ export class Game {
 
   advanceTutorial() {
     this.showTutorial(this.tutorialIndex + 1);
->>>>>>> origin/perf/fps
   }
 
   pause() {
@@ -928,6 +958,10 @@ export class Game {
       if (noiseBar) noiseBar.style.width = `${Math.round(this.noise * 100)}%`;
       if (noiseText) noiseText.textContent = `${Math.round(this.noise * 100)}%`;
 
+      this.projScreenMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+      this.cameraFrustum.setFromProjectionMatrix(this.projScreenMatrix);
+
+      const pPos = this.player.mesh.position;
       for (let i = this.zombies.length - 1; i >= 0; i--) {
         const z = this.zombies[i];
         if (z.isRemoved) {

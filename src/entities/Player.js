@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { events } from '../core/Events.js';
+import { assets } from '../core/Assets.js';
 
 // Module-level temporary scratch vectors to eliminate allocations in hot loops
 const _moveVector = new THREE.Vector3();
@@ -56,10 +57,45 @@ export class Player {
 
     this.camRaycaster = new THREE.Raycaster();
 
-    // Build Stylized Natural PBR Rig
-    this.mesh = new THREE.Group();
+    // Instance Character Hierarchy
+    const characterInstance = assets.getInstance('player');
+    if (characterInstance) {
+      this.mesh = characterInstance;
+      this.leftArm = this.mesh.getObjectByName('leftArm') || this.createLimb(-0.55, 1.15, 0);
+      this.rightArm = this.mesh.getObjectByName('rightArm') || this.createLimb(0.55, 1.15, 0);
+      this.leftLeg = this.mesh.getObjectByName('leftLeg') || this.createLimb(-0.24, 0.48, 0);
+      this.rightLeg = this.mesh.getObjectByName('rightLeg') || this.createLimb(0.24, 0.48, 0);
+    } else {
+      this.mesh = new THREE.Group();
+      this.buildDefaultRig();
+    }
 
-    // Torso (Capsule) - Casts shadow
+    // Attach 3D Weapon Model to Right Hand
+    this.weaponMesh = null;
+    this.updateHandWeaponModel();
+
+    this.mesh.position.set(0, 0, 0);
+    this.scene.add(this.mesh);
+
+    this.yaw = 0;
+    this.pitch = 0.2;
+
+    this.setupControls();
+    this.emitWeaponState();
+  }
+
+  createLimb(x, y, z) {
+    const limb = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.85, 0.24),
+      new THREE.MeshStandardMaterial({ color: 0x1b356e, roughness: 0.7 })
+    );
+    limb.position.set(x, y, z);
+    limb.castShadow = true;
+    this.mesh.add(limb);
+    return limb;
+  }
+
+  buildDefaultRig() {
     const bodyGeo = new THREE.CapsuleGeometry(0.38, 0.65, 8, 10);
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0x224488, roughness: 0.82, metalness: 0.05 });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
@@ -68,38 +104,16 @@ export class Player {
     body.receiveShadow = true;
     this.mesh.add(body);
 
-    // Head (Sphere)
     const headGeo = new THREE.SphereGeometry(0.28, 10, 10);
     const headMat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.65, metalness: 0.05 });
     const head = new THREE.Mesh(headGeo, headMat);
     head.position.y = 1.85;
-    head.castShadow = false; // Skip shadow pass for smaller detail
+    head.castShadow = false;
     this.mesh.add(head);
 
-    // Limbs (Capsules)
-    const limbMat = new THREE.MeshStandardMaterial({ color: 0x1b356e, roughness: 0.80, metalness: 0.05 });
-    const armGeo = new THREE.CapsuleGeometry(0.12, 0.62, 5, 6);
+    this.leftArm = this.createLimb(-0.52, 1.15, 0);
+    this.rightArm = this.createLimb(0.52, 1.15, 0);
 
-    this.leftArm = new THREE.Mesh(armGeo, limbMat);
-    this.leftArm.position.set(-0.52, 1.15, 0);
-    this.leftArm.castShadow = false;
-    this.mesh.add(this.leftArm);
-
-    this.rightArm = new THREE.Mesh(armGeo, limbMat);
-    this.rightArm.position.set(0.52, 1.15, 0);
-    this.rightArm.castShadow = false;
-    this.mesh.add(this.rightArm);
-
-    // 3D Weapon Model Attached to Right Arm
-    this.weaponMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.12, 0.22, 0.4),
-      new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.35, metalness: 0.85 })
-    );
-    this.weaponMesh.position.set(0, -0.4, 0.25);
-    this.weaponMesh.castShadow = false;
-    this.rightArm.add(this.weaponMesh);
-
-    // Legs (Capsules)
     const pantsMat = new THREE.MeshStandardMaterial({ color: 0x22262d, roughness: 0.85, metalness: 0.05 });
     const legGeo = new THREE.CapsuleGeometry(0.14, 0.70, 5, 6);
 
@@ -112,16 +126,6 @@ export class Player {
     this.rightLeg.position.set(0.22, 0.48, 0);
     this.rightLeg.castShadow = false;
     this.mesh.add(this.rightLeg);
-
-    this.mesh.position.set(0, 0, 0);
-    this.scene.add(this.mesh);
-
-    this.yaw = 0;
-    this.pitch = 0.2;
-
-    this.setupControls();
-    this.updateHandWeaponModel();
-    this.emitWeaponState();
   }
 
   setupControls() {
@@ -182,6 +186,33 @@ export class Player {
     }
   }
 
+  updateHandWeaponModel() {
+    const w = this.getCurrentWeapon();
+    if (this.weaponMesh && this.rightArm) {
+      this.rightArm.remove(this.weaponMesh);
+    }
+
+    const assetId = w.name.toLowerCase().includes('pistol') ? 'weapon_pistol'
+                  : w.name.toLowerCase().includes('shotgun') ? 'weapon_shotgun'
+                  : 'weapon_rifle';
+
+    const modelInstance = assets ? assets.getInstance(assetId) : null;
+    if (modelInstance) {
+      this.weaponMesh = modelInstance;
+      this.weaponMesh.position.set(0, -0.38, 0.22);
+      this.weaponMesh.rotation.set(0, 0, 0);
+      this.rightArm.add(this.weaponMesh);
+    } else {
+      this.weaponMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(w.size[0], w.size[1], w.size[2]),
+        new THREE.MeshStandardMaterial({ color: w.color, roughness: 0.35, metalness: 0.8 })
+      );
+      this.weaponMesh.position.set(0, -0.35, w.size[2] * 0.5);
+      this.weaponMesh.castShadow = true;
+      this.rightArm.add(this.weaponMesh);
+    }
+  }
+
   startReload() {
     const w = this.getCurrentWeapon();
     if (this.isReloading) return;
@@ -218,6 +249,10 @@ export class Player {
     }
   }
 
+  refillAmmo(type, count) {
+    this.addAmmo(type, count);
+  }
+
   reset() {
     this.health = this.maxHealth;
     this.mesh.position.set(0, 0, 0);
@@ -231,33 +266,35 @@ export class Player {
     this.flareCooldownTimer = 0;
     this.isReloading = false;
 
-    // Reset weapons ammo
     this.weaponList = [
       { ...CONFIG.weapons.pistol, magAmmo: CONFIG.weapons.pistol.magSize },
       { ...CONFIG.weapons.shotgun, magAmmo: CONFIG.weapons.shotgun.magSize },
       { ...CONFIG.weapons.rifle, magAmmo: CONFIG.weapons.rifle.magSize }
     ];
+    this.unlockedWeapons = { pistol: true, shotgun: false, rifle: false };
     this.currentWeaponIndex = 0;
     this.updateHandWeaponModel();
-    this.emitWeaponState();
 
     if (this.effects) this.effects.setLowHealthEffect(false);
     if (this.sound) this.sound.setLowHealthHeartbeat(false);
 
-    const bar = document.getElementById('health-bar');
-    if (bar) bar.style.width = '100%';
+    this.emitWeaponState();
   }
 
   triggerFlare() {
-    if (this.flareCooldownTimer > 0 || this.health <= 0) return;
-    this.flareCooldownTimer = CONFIG.player.flareCooldown;
+    if (this.flareCooldownTimer > 0) return;
 
-    if (this.sound) this.sound.flarePulse();
+    this.flareCooldownTimer = CONFIG.player.flareCooldown;
     if (this.effects) {
       this.effects.spawnSpark(this.mesh.position);
       this.effects.addShake(0.3);
       this.effects.showBanner('UV FLARE DEPLOYED!', '#6ec6ff');
-      this.effects.pulseFlareLight(this.mesh.position);
+      if (typeof this.effects.pulseFlareLight === 'function') this.effects.pulseFlareLight(this.mesh.position);
+      if (typeof this.effects.spawnShockwave === 'function') this.effects.spawnShockwave(this.mesh.position, CONFIG.player.flareRadius);
+    }
+    if (this.sound) {
+      if (typeof this.sound.playFlare === 'function') this.sound.playFlare();
+      else if (typeof this.sound.flarePulse === 'function') this.sound.flarePulse();
     }
 
     events.emit('flareTriggered', {
@@ -275,14 +312,16 @@ export class Player {
     this.pitch -= mouseDelta.y * this.sensitivity * ySign;
     this.pitch = Math.max(-0.4, Math.min(0.8, this.pitch));
 
-    // 2. Jump
+    // 2. Jump & Vertical Gravity
     if (this.input.isKey('Space') && this.isGrounded) {
       this.velocityY = this.jumpStrength;
       this.isGrounded = false;
     }
 
-    this.velocityY += this.gravity * dt;
-    this.mesh.position.y += this.velocityY * dt;
+    if (!this.isGrounded) {
+      this.velocityY -= this.gravity * dt;
+      this.mesh.position.y += this.velocityY * dt;
+    }
 
     if (this.mesh.position.y <= 0) {
       this.mesh.position.y = 0;
@@ -422,13 +461,13 @@ export class Player {
     }
   }
 
-  checkCollisions(pos, colliders) {
-    const radius = 0.5;
+  checkCollisions(x, z, colliders) {
+    const playerRadius = 0.45;
     for (let i = 0; i < colliders.length; i++) {
       const box = colliders[i];
       if (
-        pos.x > box.min.x - radius && pos.x < box.max.x + radius &&
-        pos.z > box.min.z - radius && pos.z < box.max.z + radius
+        x > box.min.x - playerRadius && x < box.max.x + playerRadius &&
+        z > box.min.z - playerRadius && z < box.max.z + playerRadius
       ) {
         return true;
       }
@@ -438,12 +477,21 @@ export class Player {
 
   shoot(zombies, cityRayTargets = []) {
     const w = this.getCurrentWeapon();
-    events.emit('playerShot', { weapon: w.name });
+    if (this.shootTimer > 0 || this.isReloading) return;
+
+    if (w.magAmmo <= 0) {
+      this.startReload();
+      return;
+    }
+
+    w.magAmmo--;
+    this.shootTimer = w.fireRate;
+    this.emitWeaponState();
 
     if (this.sound) {
-      if (w.name === 'SHOTGUN') this.sound.shotgunBlast();
-      else if (w.name === 'ASSAULT RIFLE') this.sound.rifleShot();
-      else this.sound.gunshot();
+      if (w.name.toLowerCase().includes('shotgun')) this.sound.playShotgun ? this.sound.playShotgun() : this.sound.shotgunBlast();
+      else if (w.name.toLowerCase().includes('rifle')) this.sound.playRifle ? this.sound.playRifle() : this.sound.rifleShot();
+      else this.sound.playGunshot ? this.sound.playGunshot() : this.sound.gunshot();
     }
 
     if (this.effects) {
@@ -498,7 +546,7 @@ export class Player {
 
       if (nearestHit) {
         if (hitZombie) {
-          const isHeadshot = (nearestHit.point.y - hitZombie.mesh.position.y) > 1.45 * hitZombie.archetype.scale;
+          const isHeadshot = (nearestHit.point.y - hitZombie.mesh.position.y) > 1.45 * (hitZombie.archetype ? hitZombie.archetype.scale : 1.0);
           const finalDmg = isHeadshot ? w.damage * 2.0 : w.damage;
 
           hitZombie.takeDamage(finalDmg);
@@ -547,6 +595,10 @@ export class Player {
     }
   }
 
+  hit(amount, sourcePos = null) {
+    this.takeDamage(amount, sourcePos);
+  }
+
   heal(amount) {
     if (this.health <= 0) return;
     this.health = Math.min(this.maxHealth, this.health + amount);
@@ -574,5 +626,26 @@ export class Player {
       this.effects.showBanner('SIGNAL LOST — YOU DIED', '#ff0000');
     }
     events.emit('gameLost');
+  }
+
+  death() {
+    this.die();
+  }
+
+  updateCamera(dt, colliders) {
+    const shoulderOffset = new THREE.Vector3(0.55, 1.65, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+    const targetLook = this.mesh.position.clone().add(shoulderOffset);
+
+    const camOffset = new THREE.Vector3(0, 0, this.camDistance);
+    camOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), -this.pitch);
+    camOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+
+    const desiredCamPos = targetLook.clone().add(camOffset);
+
+    this.camRaycaster.set(targetLook, camOffset.clone().normalize());
+    this.camRaycaster.far = this.camDistance;
+
+    this.camera.position.copy(desiredCamPos);
+    this.camera.lookAt(targetLook.clone().add(new THREE.Vector3(0, 0, -10).applyAxisAngle(new THREE.Vector3(1, 0, 0), -this.pitch).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw)));
   }
 }
