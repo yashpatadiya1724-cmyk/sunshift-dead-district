@@ -2,6 +2,8 @@
 
 > A stylized low-poly third-person zombie survival adventure built with Three.js for **GitHub Game Off 2026** (Theme: **SHIFT**).
 
+[![CI Verification](https://github.com/yashpatadiya1724-cmyk/sunshift-dead-district/actions/workflows/ci.yml/badge.svg)](https://github.com/yashpatadiya1724-cmyk/sunshift-dead-district/actions/workflows/ci.yml)
+[![Sponsor](https://img.shields.io/badge/Sponsor-Mansitra%20Foundation-ea4aaa?style=flat&logo=github-sponsors)](https://www.mansitra.in/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub Game Off 2026](https://img.shields.io/badge/GitHub_Game_Off-2026-blue.svg)](https://itch.io/jam/game-off-2026)
 [![Built with Three.js](https://img.shields.io/badge/Built_with-Three.js_r160-black.svg?logo=three.js)](https://threejs.org/)
