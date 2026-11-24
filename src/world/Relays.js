@@ -50,7 +50,7 @@ export class RelayManager {
     this.towerGroup.position.copy(CONFIG.relays.towerPosition);
 
     const towerGeo = new THREE.CylinderGeometry(1.2, 1.8, 22, 16);
-    this.towerMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+    this.towerMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.4, metalness: 0.75 });
     this.towerMesh = new THREE.Mesh(towerGeo, this.towerMat);
     this.towerMesh.position.y = 11;
     this.towerGroup.add(this.towerMesh);

@@ -42,13 +42,15 @@ export class Zombie {
     this.walkTimer = Math.random() * 10;
     this.frameCounter = Math.floor(Math.random() * 2);
 
-    // Build Stylized Rig scaled by Archetype
+    // Build Natural PBR Rig scaled by Archetype
     this.mesh = new THREE.Group();
 
-    // Torso
-    const bodyGeo = new THREE.BoxGeometry(0.75, 1.05, 0.45);
-    this.bodyMat = new THREE.MeshLambertMaterial({
+    // Torso (Capsule)
+    const bodyGeo = new THREE.CapsuleGeometry(0.36, 0.65, 8, 12);
+    this.bodyMat = new THREE.MeshStandardMaterial({
       color: this.archetype.color,
+      roughness: 0.78,
+      metalness: 0.05,
       transparent: true,
       opacity: 1.0
     });
@@ -58,65 +60,77 @@ export class Zombie {
     body.receiveShadow = true;
     this.mesh.add(body);
 
-    // Head
-    const headGeo = new THREE.BoxGeometry(0.48, 0.48, 0.48);
-    this.headMat = new THREE.MeshLambertMaterial({
+    // Head (Sphere)
+    const headGeo = new THREE.SphereGeometry(0.26, 12, 12);
+    this.headMat = new THREE.MeshStandardMaterial({
       color: this.archetype.headColor,
+      roughness: 0.72,
+      metalness: 0.05,
       transparent: true,
       opacity: 1.0
     });
     const head = new THREE.Mesh(headGeo, this.headMat);
-    head.position.y = 1.8;
+    head.position.y = 1.75;
     head.castShadow = true;
     this.mesh.add(head);
 
-    // Glowing Eyes
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000, fog: false, transparent: true, opacity: 1.0 });
-    const eyeGeo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
+    // Glowing Red Emissive Eyes (Spheres)
+    const eyeMat = new THREE.MeshStandardMaterial({
+      color: 0xff0000,
+      emissive: 0xff0000,
+      emissiveIntensity: 2.5,
+      roughness: 0.1,
+      metalness: 0.2
+    });
+    const eyeGeo = new THREE.SphereGeometry(0.045, 8, 8);
 
     const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
-    leftEye.position.set(-0.13, 1.85, 0.25);
+    leftEye.position.set(-0.11, 1.78, 0.22);
     this.mesh.add(leftEye);
 
     const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
-    rightEye.position.set(0.13, 1.85, 0.25);
+    rightEye.position.set(0.11, 1.78, 0.22);
     this.mesh.add(rightEye);
 
-    // Arms
-    this.limbMat = new THREE.MeshLambertMaterial({
+    // Arms (Capsules)
+    this.limbMat = new THREE.MeshStandardMaterial({
       color: this.archetype.color,
+      roughness: 0.78,
+      metalness: 0.05,
       transparent: true,
       opacity: 1.0
     });
-    const armGeo = new THREE.BoxGeometry(0.2, 0.8, 0.2);
+    const armGeo = new THREE.CapsuleGeometry(0.11, 0.60, 6, 8);
 
     this.leftArm = new THREE.Mesh(armGeo, this.limbMat);
-    this.leftArm.position.set(-0.52, 1.25, 0.35);
+    this.leftArm.position.set(-0.48, 1.25, 0.35);
     this.leftArm.rotation.x = -Math.PI / 2 + 0.1;
     this.leftArm.castShadow = true;
     this.mesh.add(this.leftArm);
 
     this.rightArm = new THREE.Mesh(armGeo, this.limbMat);
-    this.rightArm.position.set(0.52, 1.25, 0.35);
+    this.rightArm.position.set(0.48, 1.25, 0.35);
     this.rightArm.rotation.x = -Math.PI / 2 - 0.1;
     this.rightArm.castShadow = true;
     this.mesh.add(this.rightArm);
 
-    // Legs
-    const legGeo = new THREE.BoxGeometry(0.26, 0.9, 0.26);
-    this.pantsMat = new THREE.MeshLambertMaterial({
+    // Legs (Capsules)
+    const legGeo = new THREE.CapsuleGeometry(0.13, 0.68, 6, 8);
+    this.pantsMat = new THREE.MeshStandardMaterial({
       color: 0x1c2419,
+      roughness: 0.85,
+      metalness: 0.05,
       transparent: true,
       opacity: 1.0
     });
 
     this.leftLeg = new THREE.Mesh(legGeo, this.pantsMat);
-    this.leftLeg.position.set(-0.22, 0.45, 0);
+    this.leftLeg.position.set(-0.20, 0.45, 0);
     this.leftLeg.castShadow = true;
     this.mesh.add(this.leftLeg);
 
     this.rightLeg = new THREE.Mesh(legGeo, this.pantsMat);
-    this.rightLeg.position.set(0.22, 0.45, 0);
+    this.rightLeg.position.set(0.20, 0.45, 0);
     this.rightLeg.castShadow = true;
     this.mesh.add(this.rightLeg);
 

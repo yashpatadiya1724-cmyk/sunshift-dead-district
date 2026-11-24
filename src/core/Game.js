@@ -2,8 +2,11 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { FilmPass } from 'three/examples/jsm/postprocessing/FilmPass.js';
+import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
 
@@ -19,6 +22,8 @@ import { PickupsManager } from '../world/Pickups.js';
 import { City } from '../world/City.js';
 import { ShiftSystem } from '../world/ShiftSystem.js';
 import { RelayManager } from '../world/Relays.js';
+import { SkyLighting } from '../world/SkyLighting.js';
+import { Atmosphere } from '../world/Atmosphere.js';
 
 export const GAME_STATES = {
   LOADING: 'LOADING',
@@ -105,10 +110,21 @@ export class Game {
     this.scene.add(this.dirLight);
     this.scene.add(this.dirLight.target);
 
-    // 3. Post-Processing Pipeline
+    // 3. Post-Processing Pipeline (GTAOPass, UnrealBloomPass, Vignette, FilmPass, SMAAPass)
     try {
       this.composer = new EffectComposer(this.renderer);
-      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.renderPassObj = new RenderPass(this.scene, this.camera);
+      this.composer.addPass(this.renderPassObj);
+
+      // GTAOPass for high-end ambient occlusion
+      try {
+        this.gtaoPass = new GTAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
+        this.gtaoPass.blendIntensity = 0.8;
+        this.gtaoPass.enabled = false;
+        this.composer.addPass(this.gtaoPass);
+      } catch (gtaoErr) {
+        this.gtaoPass = null;
+      }
 
       this.bloomPass = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
@@ -118,24 +134,35 @@ export class Game {
       );
       this.composer.addPass(this.bloomPass);
 
-      const vignettePass = new ShaderPass(VignetteShader);
-      vignettePass.uniforms['offset'].value = 1.05;
-      vignettePass.uniforms['darkness'].value = 1.25;
-      this.composer.addPass(vignettePass);
-      this.composer.addPass(new OutputPass());
+      this.vignettePass = new ShaderPass(VignetteShader);
+      this.vignettePass.uniforms['offset'].value = 1.05;
+      this.vignettePass.uniforms['darkness'].value = 1.25;
+      this.composer.addPass(this.vignettePass);
+
+      this.filmPass = new FilmPass(0.12, false);
+      this.composer.addPass(this.filmPass);
+
+      this.smaaPass = new SMAAPass(window.innerWidth, window.innerHeight);
+      this.composer.addPass(this.smaaPass);
+
+      this.outputPass = new OutputPass();
+      this.composer.addPass(this.outputPass);
     } catch (e) {
       console.warn('EffectComposer initialization failed, falling back to WebGLRenderer:', e);
       this.composer = null;
     }
 
-    // 4. Core Systems, Entities, Vehicle & Pickups
+    // 4. Core Systems, Physical Sky, Atmosphere, Entities, Vehicle & Pickups
     this.sound = new Sound();
     this.sound.setMasterVolume(this.settings.volume);
 
     this.effects = new Effects(this.scene);
     this.input = new Input();
 
-    this.city = new City(this.scene);
+    this.city = new City(this.scene, this.renderer);
+    this.skyLighting = new SkyLighting(this.scene, this.renderer, this.dirLight);
+    this.atmosphere = new Atmosphere(this.scene);
+
     this.shift = new ShiftSystem(this.scene, this.dirLight, this.hemiLight, this.bloomPass, this.city, this.sound, this.effects);
     this.player = new Player(this.scene, this.camera, this.input, this.sound, this.effects);
     this.player.sensitivity = this.settings.sensitivity;
@@ -257,12 +284,26 @@ export class Game {
     this.renderer.shadowMap.enabled = preset.shadows;
     this.renderer.setPixelRatio(preset.pixelRatio);
 
+    this.usePostProcessing = preset.postProcessing !== false;
+
     if (this.composer) {
       this.composer.setPixelRatio(preset.pixelRatio);
       this.composer.setSize(window.innerWidth, window.innerHeight);
     }
+    if (this.gtaoPass) {
+      this.gtaoPass.enabled = !!preset.gtao;
+    }
     if (this.bloomPass) {
-      this.bloomPass.enabled = preset.bloom;
+      this.bloomPass.enabled = !!preset.bloom;
+    }
+    if (this.vignettePass) {
+      this.vignettePass.enabled = !!preset.vignette;
+    }
+    if (this.filmPass) {
+      this.filmPass.enabled = !!preset.film;
+    }
+    if (this.smaaPass) {
+      this.smaaPass.enabled = !!preset.smaa;
     }
 
     if (preset.shadows) {
@@ -298,6 +339,13 @@ export class Game {
       if (this.state === GAME_STATES.PLAYING) {
         this.stats.shiftsSurvived++;
         if (this.effects) this.effects.flashShift(isNight);
+
+        if (this.skyLighting) {
+          this.skyLighting.setShiftPhase(isNight);
+        }
+        if (this.atmosphere && this.city) {
+          this.atmosphere.setShiftPhase(isNight, this.city.groundMat);
+        }
 
         if (isNight) {
           this.spawnExtraNightZombies();
@@ -466,6 +514,8 @@ export class Game {
     this.pickups.reset();
     this.relays.reset();
     this.shift.reset();
+    if (this.skyLighting) this.skyLighting.setShiftPhase(false);
+    if (this.atmosphere && this.city) this.atmosphere.setShiftPhase(false, this.city.groundMat);
     this.spawnZombies();
 
     this.stats.startTime = performance.now();
@@ -495,6 +545,8 @@ export class Game {
     this.pickups.reset();
     this.relays.reset();
     this.shift.reset();
+    if (this.skyLighting) this.skyLighting.setShiftPhase(false);
+    if (this.atmosphere && this.city) this.atmosphere.setShiftPhase(false, this.city.groundMat);
     this.spawnZombies();
 
     // Clear low health effects
@@ -543,10 +595,16 @@ export class Game {
     if (this.composer) {
       this.composer.setSize(window.innerWidth, window.innerHeight);
     }
+    if (this.gtaoPass) {
+      this.gtaoPass.setSize(window.innerWidth, window.innerHeight);
+    }
+    if (this.smaaPass) {
+      this.smaaPass.setSize(window.innerWidth, window.innerHeight);
+    }
   }
 
   renderPass() {
-    if (this.composer) {
+    if (this.usePostProcessing && this.composer) {
       this.composer.render();
     } else {
       this.renderer.render(this.scene, this.camera);
@@ -577,6 +635,7 @@ export class Game {
         Math.sin(this.menuCamAngle) * 36
       );
       this.camera.lookAt(0, 3, 0);
+      if (this.skyLighting) this.skyLighting.update(dt);
       this.shift.applyShiftVisuals(dt);
       this.renderPass();
       return;
@@ -585,10 +644,12 @@ export class Game {
     if (this.state === GAME_STATES.PLAYING) {
       this.effects.update(dt);
       this.shift.update(dt);
+      if (this.skyLighting) this.skyLighting.update(dt);
       this.vehicle.update(dt, this.input, this.city.colliders, this.zombies, this.shift.isNight);
       this.pickups.update(dt, this.player);
 
       const activeEntityPos = this.vehicle.isOccupied ? this.vehicle.mesh.position : this.player.mesh.position;
+      if (this.atmosphere) this.atmosphere.update(dt, activeEntityPos);
 
       if (this.vehicle.isOccupied) {
         const rear = new THREE.Vector3(0, CONFIG.vehicle.camHeight, -CONFIG.vehicle.camDistance)

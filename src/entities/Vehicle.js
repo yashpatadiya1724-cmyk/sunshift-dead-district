@@ -19,8 +19,8 @@ export class Vehicle {
     // Build Low-Poly Muscle Car 3D Rig
     this.mesh = new THREE.Group();
 
-    // 1. Muscle Car Body (Sleek aggressive red/black)
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x991111 });
+    // 1. Muscle Car Body (Sleek aggressive red/black PBR finish)
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x991111, roughness: 0.35, metalness: 0.85 });
     const chassisGeo = new THREE.BoxGeometry(2.3, 0.65, 4.4);
     this.chassis = new THREE.Mesh(chassisGeo, bodyMat);
     this.chassis.position.y = 0.55;
@@ -29,7 +29,7 @@ export class Vehicle {
     this.mesh.add(this.chassis);
 
     // 2. Cabin & Windshield
-    const cabinMat = new THREE.MeshLambertMaterial({ color: 0x14181f });
+    const cabinMat = new THREE.MeshStandardMaterial({ color: 0x14181f, roughness: 0.20, metalness: 0.90 });
     const cabinGeo = new THREE.BoxGeometry(1.95, 0.62, 2.3);
     const cabin = new THREE.Mesh(cabinGeo, cabinMat);
     cabin.position.set(0, 1.15, -0.3);
@@ -37,7 +37,7 @@ export class Vehicle {
     this.mesh.add(cabin);
 
     // 3. 4 Low-Poly Wheels
-    const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.85, metalness: 0.1 });
     const wheelGeo = new THREE.BoxGeometry(0.4, 0.7, 0.7);
     this.wheels = [];
     const wheelOffsets = [

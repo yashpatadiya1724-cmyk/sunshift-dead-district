@@ -94,8 +94,8 @@ export const CONFIG = {
   },
   enemies: {
     normal: { type: 'NORMAL', health: 70, daySpeed: 1.8, nightSpeed: 4.5, damage: 12, scale: 1.0, color: 0x3d5236, headColor: 0x5a7d4a, weight: 0.60 },
-    runner: { type: 'RUNNER', health: 40, daySpeed: 3.2, nightSpeed: 6.2, damage: 8, scale: 0.82, color: 0x4a5d30, headColor: 0x73914a, weight: 0.25 },
-    brute: { type: 'BRUTE', health: 220, daySpeed: 1.1, nightSpeed: 2.8, damage: 25, scale: 1.45, color: 0x22301c, headColor: 0x344729, weight: 0.15 }
+    runner: { type: 'RUNNER', health: 40, daySpeed: 3.2, nightSpeed: 6.2, damage: 8, scale: 0.82, color: 0x6a3830, headColor: 0x8e4c40, weight: 0.25 },
+    brute: { type: 'BRUTE', health: 220, daySpeed: 1.1, nightSpeed: 2.8, damage: 25, scale: 1.45, color: 0x29253d, headColor: 0x3f3659, weight: 0.15 }
   },
 
   // Pickups
@@ -152,8 +152,38 @@ export const CONFIG = {
 
   // Quality Presets
   quality: {
-    LOW: { shadows: false, shadowMapSize: 512, bloom: false, pixelRatio: 1.0 },
-    MEDIUM: { shadows: true, shadowMapSize: 1024, bloom: true, pixelRatio: 1.0 },
-    HIGH: { shadows: true, shadowMapSize: 2048, bloom: true, pixelRatio: 1.5 }
+    LOW: {
+      postProcessing: false,
+      shadows: false,
+      shadowMapSize: 512,
+      bloom: false,
+      gtao: false,
+      film: false,
+      smaa: false,
+      vignette: false,
+      pixelRatio: 1.0
+    },
+    MEDIUM: {
+      postProcessing: true,
+      shadows: true,
+      shadowMapSize: 1024,
+      bloom: true,
+      gtao: false,
+      film: true,
+      smaa: true,
+      vignette: true,
+      pixelRatio: 1.0
+    },
+    HIGH: {
+      postProcessing: true,
+      shadows: true,
+      shadowMapSize: 2048,
+      bloom: true,
+      gtao: true,
+      film: true,
+      smaa: true,
+      vignette: true,
+      pixelRatio: typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 1.5) : 1.0
+    }
   }
 };

@@ -42,60 +42,60 @@ export class Player {
 
     this.camRaycaster = new THREE.Raycaster();
 
-    // Build Stylized Rig
+    // Build Stylized Natural PBR Rig
     this.mesh = new THREE.Group();
 
-    // Torso
-    const bodyGeo = new THREE.BoxGeometry(0.8, 1.1, 0.45);
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x224488 });
+    // Torso (Capsule)
+    const bodyGeo = new THREE.CapsuleGeometry(0.38, 0.65, 8, 12);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x224488, roughness: 0.82, metalness: 0.05 });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.position.y = 1.15;
     body.castShadow = true;
     body.receiveShadow = true;
     this.mesh.add(body);
 
-    // Head
-    const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-    const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
+    // Head (Sphere)
+    const headGeo = new THREE.SphereGeometry(0.28, 12, 12);
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.65, metalness: 0.05 });
     const head = new THREE.Mesh(headGeo, headMat);
-    head.position.y = 1.95;
+    head.position.y = 1.85;
     head.castShadow = true;
     this.mesh.add(head);
 
-    // Limbs
-    const limbMat = new THREE.MeshLambertMaterial({ color: 0x1b356e });
-    const armGeo = new THREE.BoxGeometry(0.24, 0.85, 0.24);
+    // Limbs (Capsules with standard cloth materials)
+    const limbMat = new THREE.MeshStandardMaterial({ color: 0x1b356e, roughness: 0.80, metalness: 0.05 });
+    const armGeo = new THREE.CapsuleGeometry(0.12, 0.62, 6, 8);
 
     this.leftArm = new THREE.Mesh(armGeo, limbMat);
-    this.leftArm.position.set(-0.55, 1.15, 0);
+    this.leftArm.position.set(-0.52, 1.15, 0);
     this.leftArm.castShadow = true;
     this.mesh.add(this.leftArm);
 
     this.rightArm = new THREE.Mesh(armGeo, limbMat);
-    this.rightArm.position.set(0.55, 1.15, 0);
+    this.rightArm.position.set(0.52, 1.15, 0);
     this.rightArm.castShadow = true;
     this.mesh.add(this.rightArm);
 
     // 3D Weapon Model Attached to Right Arm
     this.weaponMesh = new THREE.Mesh(
       new THREE.BoxGeometry(0.12, 0.22, 0.4),
-      new THREE.MeshLambertMaterial({ color: 0x444444 })
+      new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.35, metalness: 0.85 })
     );
     this.weaponMesh.position.set(0, -0.4, 0.25);
     this.weaponMesh.castShadow = true;
     this.rightArm.add(this.weaponMesh);
 
-    // Legs
-    const pantsMat = new THREE.MeshLambertMaterial({ color: 0x22262d });
-    const legGeo = new THREE.BoxGeometry(0.28, 0.95, 0.28);
+    // Legs (Capsules)
+    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x22262d, roughness: 0.85, metalness: 0.05 });
+    const legGeo = new THREE.CapsuleGeometry(0.14, 0.70, 6, 8);
 
     this.leftLeg = new THREE.Mesh(legGeo, pantsMat);
-    this.leftLeg.position.set(-0.24, 0.48, 0);
+    this.leftLeg.position.set(-0.22, 0.48, 0);
     this.leftLeg.castShadow = true;
     this.mesh.add(this.leftLeg);
 
     this.rightLeg = new THREE.Mesh(legGeo, pantsMat);
-    this.rightLeg.position.set(0.24, 0.48, 0);
+    this.rightLeg.position.set(0.22, 0.48, 0);
     this.rightLeg.castShadow = true;
     this.mesh.add(this.rightLeg);
 
@@ -160,7 +160,7 @@ export class Player {
 
     this.weaponMesh = new THREE.Mesh(
       new THREE.BoxGeometry(w.size[0], w.size[1], w.size[2]),
-      new THREE.MeshLambertMaterial({ color: w.color })
+      new THREE.MeshStandardMaterial({ color: w.color, roughness: 0.35, metalness: 0.85 })
     );
     this.weaponMesh.position.set(0, -0.35, w.size[2] * 0.5);
     this.weaponMesh.castShadow = true;
