@@ -1,34 +1,51 @@
 SUNSHIFT: Dead District - Third-Party Asset Attributions & Licenses
 ====================================================================
 
-The following third-party assets, inspiration, and model schemas are incorporated 
-or targeted by the SUNSHIFT: Dead District procedural/asset pipeline:
+The following third-party 3D models and HDRI environments are incorporated in SUNSHIFT: Dead District:
 
 1. Kenney (Asset Kits)
-   - Asset: City Kit, Road Kit, Modular Props
+   - Asset: building_a.glb (building-small-a), building_b.glb (building-small-b), road_straight.glb, sidewalk.glb (pavement)
+   - Kit: Starter Kit City Builder / City Kit
    - Author: Kenney (https://kenney.nl)
+   - Source URL: https://github.com/KenneyNL/Starter-Kit-City-Builder
    - License: Creative Commons CC0 1.0 Universal (Public Domain)
    - Details: https://creativecommons.org/publicdomain/zero/1.0/
 
-2. Quaternius (Character & Animated Zombie Models)
-   - Asset: Modular Survivors, Animated Undead Pack
+2. Kenney (Car Kit)
+   - Asset: car.glb (sedan-sports)
+   - Kit: Kenney Car Kit
+   - Author: Kenney (https://kenney.nl)
+   - Source URL: https://github.com/Arslan12216775/kenney_car-kit
+   - License: Creative Commons CC0 1.0 Universal (Public Domain)
+   - Details: https://creativecommons.org/publicdomain/zero/1.0/
+
+3. Quaternius (Character & Animated Zombie Models)
+   - Asset: player.glb (Worker), zombie.glb (Punk)
+   - Kit: Modular Men / Survivors Pack
    - Author: Quaternius (https://quaternius.com)
+   - Source URL: https://github.com/trebeljahr/quaternius-showcase
    - License: Creative Commons CC0 1.0 Universal (Public Domain)
    - Details: https://creativecommons.org/publicdomain/zero/1.0/
 
-3. Poly Pizza / Poly by Google (Vehicles & Weapons)
-   - Asset: Low-Poly Muscle Car, Firearms (Pistol, Shotgun, Assault Rifle)
-   - Source: Poly Pizza (https://poly.pizza)
-   - License: Creative Commons Attribution 3.0 Unported (CC-BY 3.0) / CC0
-   - Details: https://creativecommons.org/licenses/by/3.0/
-
-4. Poly Haven (HDRI Environments & Textures)
-   - Asset: High Dynamic Range Skies (Day Sky, Blood Night Sky)
-   - Author: Poly Haven (https://polyhaven.com)
+4. Quaternius (Firearms & Weapons)
+   - Asset: pistol.glb (Pistol_1), shotgun.glb (Shotgun_1), rifle.glb (AR_1)
+   - Kit: Survival Pack & Modular Sci-Fi Guns Pack
+   - Author: Quaternius (https://quaternius.com)
+   - Source URL: https://github.com/trebeljahr/quaternius-showcase
    - License: Creative Commons CC0 1.0 Universal (Public Domain)
    - Details: https://creativecommons.org/publicdomain/zero/1.0/
+
+5. Poly Haven (1K HDRIs)
+   - Asset: day_sky.hdr (Zwartkops Straight Afternoon 1K)
+     - Authors: Dimitrios Savva (Photography), Jarod Guest (Processing)
+     - Source URL: https://polyhaven.com/a/zwartkops_straight_afternoon
+     - License: Creative Commons CC0 1.0 Universal (Public Domain)
+   - Asset: night_sky.hdr (Zwinger Night 1K)
+     - Author: Greg Zaal
+     - Source URL: https://polyhaven.com/a/zwinger_night
+     - License: Creative Commons CC0 1.0 Universal (Public Domain)
 
 ====================================================================
 Note: The game features a complete zero-crash procedural fallback engine.
-Any asset not physically loaded from public/ is procedurally generated with
-harmonized PBR standard materials (roughness, metalness, and unified Haven City palette).
+Any asset not physically loaded or failing validation seamlessly falls back
+to procedural PBR geometry and shaders.
