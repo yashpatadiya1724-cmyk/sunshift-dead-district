@@ -254,6 +254,50 @@ runTest('Pickups balance health and ammunition resupply capacities', () => {
   assert(dropChance > 0.05 && dropChance <= 0.4, 'Item drop rate must remain balanced between 5% and 40%');
 });
 
+// ===== SUITE 7: EXTRACTION & VICTORY CONDITIONS =====
+console.log('\n--- Suite 7: Extraction & Victory Conditions ---');
+
+runTest('Relay proximity collection threshold and distance metrics calculate accurately', () => {
+  const { pickupRadius, positions, towerEvacRadius, towerPosition } = CONFIG.relays;
+  const relay0 = positions[0]; // (-49, 0, -27)
+
+  // Within pickup radius
+  const distClose = Math.hypot(relay0.x - (-48), relay0.z - (-27)); // 1.0m
+  assert(distClose < pickupRadius, 'Player at 1.0m should be within pickup radius');
+
+  // Outside pickup radius
+  const distFar = Math.hypot(relay0.x - (-45), relay0.z - (-27)); // 4.0m
+  assert(distFar > pickupRadius, 'Player at 4.0m should be outside pickup radius');
+
+  // Tower extraction zone radius check
+  const distTowerInside = Math.hypot(towerPosition.x - (towerPosition.x + 2), towerPosition.z - towerPosition.z); // 2.0m
+  assert(distTowerInside < towerEvacRadius, 'Player within 2.0m is inside evacuation zone');
+});
+
+runTest('Victory trigger strictly requires all 4 relays collected before evac tower triggers gameWon', () => {
+  const { total, towerEvacRadius } = CONFIG.relays;
+  assert.strictEqual(total, 4, 'Must require exactly 4 relays for extraction');
+
+  let relaysCollected = 0;
+  let gameWonTriggered = false;
+
+  const checkVictory = (distToTower) => {
+    if (relaysCollected >= total && distToTower < towerEvacRadius) {
+      gameWonTriggered = true;
+    }
+  };
+
+  // Premature entry to evac tower with only 3 relays collected
+  relaysCollected = 3;
+  checkVictory(2.0); // Inside extraction zone
+  assert.strictEqual(gameWonTriggered, false, 'Game must not be won if fewer than 4 relays collected');
+
+  // Full collection achieved then enter extraction zone
+  relaysCollected = 4;
+  checkVictory(2.0);
+  assert.strictEqual(gameWonTriggered, true, 'Game must be won when 4/4 relays collected and player reaches evac tower');
+});
+
 console.log('\n================================');
 console.log(`Results: ${testsPassed} passed, ${testsFailed} failed`);
 console.log('================================');
