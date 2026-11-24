@@ -176,7 +176,9 @@ export class Game {
 
     document.addEventListener('pointerlockchange', () => {
       if (!document.pointerLockElement && this.state === GAME_STATES.PLAYING) {
-        this.pause();
+        if (this.input && this.input.isLocked) {
+          this.pause();
+        }
       }
     });
 
@@ -384,14 +386,19 @@ export class Game {
   }
 
   start() {
-    this.sound.startAmbient();
+    if (this.sound) this.sound.startAmbient();
     this.state = GAME_STATES.PLAYING;
     this.stats.startTime = performance.now();
     this.stats.zombiesKilled = 0;
     this.stats.relaysCollected = 0;
     this.stats.shiftsSurvived = 0;
     this.input.reset();
-    document.body.requestPointerLock();
+    try {
+      const lockPromise = document.body.requestPointerLock();
+      if (lockPromise && typeof lockPromise.catch === 'function') {
+        lockPromise.catch(() => {});
+      }
+    } catch (e) {}
     events.emit('stateChange', this.state);
 
     this.checkFirstTimeTutorial();

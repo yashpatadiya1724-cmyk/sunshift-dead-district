@@ -36,7 +36,14 @@ export class Menu {
     this.bindButtons();
     this.bindSettings();
     this.initEvents();
-    this.startLoadingSequence();
+
+    // Immediately display Main Menu (bypass blocking loading stall)
+    this.showPanel(this.mainMenu);
+    try {
+      this.game.showMenu();
+    } catch (e) {
+      console.warn('Game.showMenu init notice:', e);
+    }
   }
 
   showPanel(panel) {
@@ -80,7 +87,10 @@ export class Menu {
     };
 
     // Main Menu Buttons
-    bindClick('btn-play', () => this.game.start());
+    bindClick('btn-play', () => {
+      this.showPanel(null); // Instantly dismiss menu UI
+      this.game.start();
+    });
     bindClick('btn-controls', () => this.showPanel(this.controlsPanel));
     bindClick('btn-settings', () => {
       this.settingsReturnTarget = this.mainMenu;
@@ -234,28 +244,5 @@ export class Menu {
     if (this.statKills) this.statKills.textContent = stats.zombiesKilled || 0;
     if (this.statRelays) this.statRelays.textContent = `${stats.relaysCollected || 0} / 4`;
     if (this.statShifts) this.statShifts.textContent = stats.shiftsSurvived || 0;
-  }
-
-  startLoadingSequence() {
-    this.showPanel(this.loadingScreen);
-    const bar = document.getElementById('loading-bar-fill') || document.getElementById('loading-progress');
-    let progress = 0;
-
-    const interval = setInterval(() => {
-      progress += 0.25;
-      if (bar) bar.style.width = `${Math.min(100, progress * 100)}%`;
-
-      if (progress >= 1.0) {
-        clearInterval(interval);
-        setTimeout(() => {
-          try {
-            this.game.showMenu();
-          } catch (e) {
-            console.error('Error calling showMenu:', e);
-          }
-          this.showPanel(this.mainMenu);
-        }, 300);
-      }
-    }, 250);
   }
 }
