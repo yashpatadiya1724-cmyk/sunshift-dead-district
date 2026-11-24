@@ -2,6 +2,19 @@ import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { events } from '../core/Events.js';
 
+// Module-level temporary scratch vectors to eliminate allocations in hot loops
+const _moveVector = new THREE.Vector3();
+const _upAxis = new THREE.Vector3(0, 1, 0);
+const _testPosX = new THREE.Vector3();
+const _testPosZ = new THREE.Vector3();
+const _headPos = new THREE.Vector3();
+const _idealOffset = new THREE.Vector3();
+const _camDir = new THREE.Vector3();
+const _finalCamPos = new THREE.Vector3();
+const _shootRaycaster = new THREE.Raycaster();
+const _shootForward = new THREE.Vector3();
+const _spreadForward = new THREE.Vector3();
+
 export class Player {
   constructor(scene, camera, input, sound, effects) {
     this.scene = scene;
@@ -43,61 +56,61 @@ export class Player {
 
     this.camRaycaster = new THREE.Raycaster();
 
-    // Build Stylized Rig
+    // Build Stylized Natural PBR Rig
     this.mesh = new THREE.Group();
 
-    // Torso
-    const bodyGeo = new THREE.BoxGeometry(0.8, 1.1, 0.45);
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x224488 });
+    // Torso (Capsule) - Casts shadow
+    const bodyGeo = new THREE.CapsuleGeometry(0.38, 0.65, 8, 10);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x224488, roughness: 0.82, metalness: 0.05 });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.position.y = 1.15;
     body.castShadow = true;
     body.receiveShadow = true;
     this.mesh.add(body);
 
-    // Head
-    const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-    const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
+    // Head (Sphere)
+    const headGeo = new THREE.SphereGeometry(0.28, 10, 10);
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.65, metalness: 0.05 });
     const head = new THREE.Mesh(headGeo, headMat);
-    head.position.y = 1.95;
-    head.castShadow = true;
+    head.position.y = 1.85;
+    head.castShadow = false; // Skip shadow pass for smaller detail
     this.mesh.add(head);
 
-    // Limbs
-    const limbMat = new THREE.MeshLambertMaterial({ color: 0x1b356e });
-    const armGeo = new THREE.BoxGeometry(0.24, 0.85, 0.24);
+    // Limbs (Capsules)
+    const limbMat = new THREE.MeshStandardMaterial({ color: 0x1b356e, roughness: 0.80, metalness: 0.05 });
+    const armGeo = new THREE.CapsuleGeometry(0.12, 0.62, 5, 6);
 
     this.leftArm = new THREE.Mesh(armGeo, limbMat);
-    this.leftArm.position.set(-0.55, 1.15, 0);
-    this.leftArm.castShadow = true;
+    this.leftArm.position.set(-0.52, 1.15, 0);
+    this.leftArm.castShadow = false;
     this.mesh.add(this.leftArm);
 
     this.rightArm = new THREE.Mesh(armGeo, limbMat);
-    this.rightArm.position.set(0.55, 1.15, 0);
-    this.rightArm.castShadow = true;
+    this.rightArm.position.set(0.52, 1.15, 0);
+    this.rightArm.castShadow = false;
     this.mesh.add(this.rightArm);
 
     // 3D Weapon Model Attached to Right Arm
     this.weaponMesh = new THREE.Mesh(
       new THREE.BoxGeometry(0.12, 0.22, 0.4),
-      new THREE.MeshLambertMaterial({ color: 0x444444 })
+      new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.35, metalness: 0.85 })
     );
     this.weaponMesh.position.set(0, -0.4, 0.25);
-    this.weaponMesh.castShadow = true;
+    this.weaponMesh.castShadow = false;
     this.rightArm.add(this.weaponMesh);
 
-    // Legs
-    const pantsMat = new THREE.MeshLambertMaterial({ color: 0x22262d });
-    const legGeo = new THREE.BoxGeometry(0.28, 0.95, 0.28);
+    // Legs (Capsules)
+    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x22262d, roughness: 0.85, metalness: 0.05 });
+    const legGeo = new THREE.CapsuleGeometry(0.14, 0.70, 5, 6);
 
     this.leftLeg = new THREE.Mesh(legGeo, pantsMat);
-    this.leftLeg.position.set(-0.24, 0.48, 0);
-    this.leftLeg.castShadow = true;
+    this.leftLeg.position.set(-0.22, 0.48, 0);
+    this.leftLeg.castShadow = false;
     this.mesh.add(this.leftLeg);
 
     this.rightLeg = new THREE.Mesh(legGeo, pantsMat);
-    this.rightLeg.position.set(0.24, 0.48, 0);
-    this.rightLeg.castShadow = true;
+    this.rightLeg.position.set(0.22, 0.48, 0);
+    this.rightLeg.castShadow = false;
     this.mesh.add(this.rightLeg);
 
     this.mesh.position.set(0, 0, 0);
@@ -106,32 +119,23 @@ export class Player {
     this.yaw = 0;
     this.pitch = 0.2;
 
-    this.setupInputListeners();
+    this.setupControls();
     this.updateHandWeaponModel();
     this.emitWeaponState();
   }
 
-  setupInputListeners() {
+  setupControls() {
     window.addEventListener('keydown', (e) => {
-      // Weapon selection 1, 2, 3
+      if (this.health <= 0) return;
       if (e.code === 'Digit1') this.switchWeapon(0);
       if (e.code === 'Digit2') this.switchWeapon(1);
       if (e.code === 'Digit3') this.switchWeapon(2);
-
-      // Manual reload [R]
-      if (e.code === 'KeyR') {
-        this.startReload();
-      }
-
-      // UV Flare [Q]
-      if (e.code === 'KeyQ') {
-        this.triggerFlare();
-      }
+      if (e.code === 'KeyR') this.startReload();
+      if (e.code === 'KeyQ') this.triggerFlare();
     });
 
-    // Mouse wheel weapon cycle
     window.addEventListener('wheel', (e) => {
-      if (this.input.isLocked) {
+      if (this.input && this.input.isLocked && this.health > 0) {
         if (e.deltaY > 0) {
           this.switchWeapon((this.currentWeaponIndex + 1) % this.weaponList.length);
         } else {
@@ -143,7 +147,7 @@ export class Player {
 
   unlockWeapon(name) {
     const key = name.toLowerCase();
-    if (this.unlockedWeapons[key] !== undefined) {
+    if (this.unlockedWeapons && this.unlockedWeapons[key] !== undefined) {
       this.unlockedWeapons[key] = true;
     }
   }
@@ -158,82 +162,66 @@ export class Player {
       index = map[index.toLowerCase()] ?? 0;
     }
     const key = (index === 0) ? 'pistol' : (index === 1) ? 'shotgun' : 'rifle';
-    if (!this.unlockedWeapons[key]) {
+    if (this.unlockedWeapons && !this.unlockedWeapons[key]) {
       if (this.effects) {
         this.effects.showBanner(`${key.toUpperCase()} LOCKED`, '#ff4444');
       }
       return;
     }
-    if (index === this.currentWeaponIndex || this.isReloading) return;
+    if (index === this.currentWeaponIndex || index < 0 || index >= this.weaponList.length) return;
+    if (this.isReloading) {
+      this.isReloading = false;
+    }
     this.currentWeaponIndex = index;
     this.shootTimer = 0.15;
     this.updateHandWeaponModel();
     this.emitWeaponState();
-    if (this.sound) this.sound.uiClick();
-  }
-
-  updateHandWeaponModel() {
-    const w = this.getCurrentWeapon();
-    this.rightArm.remove(this.weaponMesh);
-    if (this.weaponMesh.geometry) this.weaponMesh.geometry.dispose();
-
-    this.weaponMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(w.size[0], w.size[1], w.size[2]),
-      new THREE.MeshLambertMaterial({ color: w.color })
-    );
-    this.weaponMesh.position.set(0, -0.35, w.size[2] * 0.5);
-    this.weaponMesh.castShadow = true;
-    this.rightArm.add(this.weaponMesh);
+    if (this.sound) {
+      if (typeof this.sound.playClick === 'function') this.sound.playClick();
+      else if (typeof this.sound.uiClick === 'function') this.sound.uiClick();
+    }
   }
 
   startReload() {
     const w = this.getCurrentWeapon();
-    if (this.isReloading || w.magAmmo === w.magSize || w.reserveAmmo <= 0) return;
+    if (this.isReloading) return;
+    if (w.magAmmo >= w.magSize) return;
+    if (w.reserveAmmo <= 0) return;
 
     this.isReloading = true;
     this.reloadTimer = w.reloadTime;
-    if (this.sound) this.sound.playReload();
+    if (this.sound) this.sound.reload();
     this.emitWeaponState();
   }
 
   emitWeaponState() {
     const w = this.getCurrentWeapon();
+    const reloadPct = this.isReloading && w.reloadTime > 0
+      ? (1 - this.reloadTimer / w.reloadTime) * 100
+      : 0;
+
     events.emit('weaponState', {
       name: w.name,
       mag: w.magAmmo,
-      reserve: w.reserveAmmo === Infinity ? '∞' : w.reserveAmmo,
+      reserve: w.reserveAmmo,
       isReloading: this.isReloading,
-      reloadProgress: this.isReloading ? (1 - this.reloadTimer / w.reloadTime) : 1
+      reloadProgress: reloadPct
     });
   }
 
-  heal(amount) {
-    this.health = Math.min(this.maxHealth, this.health + amount);
-
-    // If health recovers above 25, clear low-health visual filter and heartbeat sound
-    if (this.health > 25) {
-      if (this.effects) this.effects.setLowHealthEffect(false);
-      if (this.sound) this.sound.setLowHealthHeartbeat(false);
-    }
-
-    const bar = document.getElementById('health-bar');
-    if (bar) bar.style.width = `${(this.health / this.maxHealth) * 100}%`;
-
-    events.emit('playerHealed', { health: this.health, maxHealth: this.maxHealth });
-  }
-
-  refillAmmo(type, amount) {
-    const target = this.weaponList.find(w => w.name.toLowerCase().includes(type.toLowerCase()));
-    if (target && target.reserveAmmo !== Infinity) {
-      target.reserveAmmo = Math.min(target.maxReserve, target.reserveAmmo + amount);
+  addAmmo(type, count) {
+    const w = this.weaponList.find(item => item.name.toLowerCase().includes(type.toLowerCase()));
+    if (w && w.reserveAmmo !== Infinity) {
+      w.reserveAmmo = Math.min(w.maxReserve, w.reserveAmmo + count);
       this.emitWeaponState();
+      if (this.sound) this.sound.ammoPickup();
     }
   }
 
   reset() {
+    this.health = this.maxHealth;
     this.mesh.position.set(0, 0, 0);
     this.mesh.rotation.set(0, 0, 0);
-    this.health = this.maxHealth;
     this.velocityY = 0;
     this.isGrounded = true;
     this.yaw = 0;
@@ -269,10 +257,11 @@ export class Player {
       this.effects.spawnSpark(this.mesh.position);
       this.effects.addShake(0.3);
       this.effects.showBanner('UV FLARE DEPLOYED!', '#6ec6ff');
+      this.effects.pulseFlareLight(this.mesh.position);
     }
 
     events.emit('flareTriggered', {
-      position: this.mesh.position.clone(),
+      position: this.mesh.position,
       radius: CONFIG.player.flareRadius,
       duration: this.flareDuration
     });
@@ -301,7 +290,7 @@ export class Player {
       this.isGrounded = true;
     }
 
-    // 3. Movement with X/Z Wall Sliding
+    // 3. Movement without runtime Vector3 allocation
     let moveZ = 0;
     let moveX = 0;
     if (this.input.isKey('KeyW')) moveZ -= 1;
@@ -309,25 +298,27 @@ export class Player {
     if (this.input.isKey('KeyA')) moveX -= 1;
     if (this.input.isKey('KeyD')) moveX += 1;
 
-    const moveVector = new THREE.Vector3(moveX, 0, moveZ).normalize();
+    _moveVector.set(moveX, 0, moveZ);
+    const isMoving = (moveX !== 0 || moveZ !== 0);
+
     const isSprinting = this.input.isKey('ShiftLeft') || this.input.isKey('ShiftRight');
     const currentSpeed = this.speed * (isSprinting ? this.sprintMultiplier : 1.0);
 
-    const isMoving = moveVector.lengthSq() > 0;
     if (isMoving) {
-      moveVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
-      const step = moveVector.multiplyScalar(currentSpeed * dt);
+      _moveVector.normalize();
+      _moveVector.applyAxisAngle(_upAxis, this.yaw);
+      _moveVector.multiplyScalar(currentSpeed * dt);
 
-      const testPosX = this.mesh.position.clone();
-      testPosX.x += step.x;
-      if (!this.checkCollisions(testPosX, cityColliders)) {
-        this.mesh.position.x = testPosX.x;
+      _testPosX.copy(this.mesh.position);
+      _testPosX.x += _moveVector.x;
+      if (!this.checkCollisions(_testPosX, cityColliders)) {
+        this.mesh.position.x = _testPosX.x;
       }
 
-      const testPosZ = this.mesh.position.clone();
-      testPosZ.z += step.z;
-      if (!this.checkCollisions(testPosZ, cityColliders)) {
-        this.mesh.position.z = testPosZ.z;
+      _testPosZ.copy(this.mesh.position);
+      _testPosZ.z += _moveVector.z;
+      if (!this.checkCollisions(_testPosZ, cityColliders)) {
+        this.mesh.position.z = _testPosZ.z;
       }
 
       this.mesh.rotation.y = this.yaw + Math.PI;
@@ -344,26 +335,25 @@ export class Player {
         this.sound.playFootstep();
       }
     } else {
-      this.leftLeg.rotation.x = THREE.MathUtils.lerp(this.leftLeg.rotation.x, 0, 0.2);
-      this.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rightLeg.rotation.x, 0, 0.2);
-      this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0, 0.2);
-      this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, 0, 0.2);
+      this.leftLeg.rotation.x = 0;
+      this.rightLeg.rotation.x = 0;
+      this.leftArm.rotation.x = 0;
+      this.rightArm.rotation.x = 0;
     }
 
     // 4. Camera Follow with Wall Raycast Occlusion Avoidance
-    const headPos = this.mesh.position.clone();
-    headPos.y += 1.6;
+    _headPos.copy(this.mesh.position);
+    _headPos.y += 1.6;
 
     const shakeOffset = this.effects ? this.effects.getShakeOffset(dt) : { x: 0, y: 0 };
-    const idealOffset = new THREE.Vector3(
+    _idealOffset.set(
       Math.sin(this.yaw) * Math.cos(this.pitch) * this.camDistance,
       Math.sin(this.pitch) * this.camDistance + 0.3,
       Math.cos(this.yaw) * Math.cos(this.pitch) * this.camDistance
     );
 
-    const idealCamPos = headPos.clone().add(idealOffset);
-    const camDir = idealOffset.clone().normalize();
-    this.camRaycaster.set(headPos, camDir);
+    _camDir.copy(_idealOffset).normalize();
+    this.camRaycaster.set(_headPos, _camDir);
     this.camRaycaster.far = this.camDistance;
 
     const hits = this.camRaycaster.intersectObjects(cityMeshes, false);
@@ -372,12 +362,12 @@ export class Player {
       actualDist = Math.max(1.0, hits[0].distance - 0.35);
     }
 
-    const finalCamPos = headPos.clone().addScaledVector(camDir, actualDist);
-    finalCamPos.x += shakeOffset.x;
-    finalCamPos.y += shakeOffset.y;
+    _finalCamPos.copy(_headPos).addScaledVector(_camDir, actualDist);
+    _finalCamPos.x += shakeOffset.x;
+    _finalCamPos.y += shakeOffset.y;
 
-    this.camera.position.copy(finalCamPos);
-    this.camera.lookAt(headPos.x, headPos.y - 0.1, headPos.z);
+    this.camera.position.copy(_finalCamPos);
+    this.camera.lookAt(_headPos.x, _headPos.y - 0.1, _headPos.z);
 
     // 5. Flare Cooldown Tick
     if (this.flareCooldownTimer > 0) {
@@ -406,7 +396,7 @@ export class Player {
       }
     }
 
-    // 7. Weapon Firing Logic (Auto vs Semi-Auto)
+    // 7. Weapon Firing Logic
     this.shootTimer -= dt;
     const w = this.getCurrentWeapon();
 
@@ -417,12 +407,10 @@ export class Player {
         this.shootTimer = w.fireRate;
         this.emitWeaponState();
 
-        // If semi-auto, consume click
         if (!w.auto) {
           this.input.mouse.isDown = false;
         }
       } else {
-        // Auto-reload on empty trigger
         this.startReload();
       }
     }
@@ -446,7 +434,6 @@ export class Player {
     const w = this.getCurrentWeapon();
     events.emit('playerShot', { weapon: w.name });
 
-    // Trigger weapon-specific audio
     if (this.sound) {
       if (w.name === 'SHOTGUN') this.sound.shotgunBlast();
       else if (w.name === 'ASSAULT RIFLE') this.sound.rifleShot();
@@ -455,60 +442,110 @@ export class Player {
 
     if (this.effects) {
       this.effects.addShake(w.name === 'SHOTGUN' ? 0.16 : 0.08);
-      const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
-      this.effects.spawnMuzzleFlash(this.mesh.position, forward);
+      _shootForward.set(0, 0, -1).applyAxisAngle(_upAxis, this.yaw);
+      this.effects.spawnMuzzleFlash(this.mesh.position, _shootForward);
     }
 
     const activeZombies = zombies.filter(z => !z.isDead);
     const activeZombieMeshes = activeZombies.map(z => z.mesh);
     const candidateTargets = [...activeZombieMeshes, ...cityMeshes];
 
-    // Fire pellets (Shotgun = 6 pellets with spread; Pistol/Rifle = 1 pellet)
+    // Fire pellets without allocating new Raycaster per pellet
     for (let p = 0; p < w.pellets; p++) {
-      const raycaster = new THREE.Raycaster();
-      const spreadX = (Math.random() - 0.5) * w.spread;
-      const spreadY = (Math.random() - 0.5) * w.spread;
-      raycaster.setFromCamera(new THREE.Vector2(spreadX, spreadY), this.camera);
-      raycaster.far = this.maxShootingRange;
+      _spreadForward.set(
+        -Math.sin(this.yaw) * Math.cos(this.pitch) + (Math.random() - 0.5) * w.spread,
+        -Math.sin(this.pitch) + (Math.random() - 0.5) * w.spread,
+        -Math.cos(this.yaw) * Math.cos(this.pitch) + (Math.random() - 0.5) * w.spread
+      ).normalize();
 
-      const intersects = raycaster.intersectObjects(candidateTargets, true);
-      if (intersects.length > 0) {
-        const closestHit = intersects[0];
-        const hitZombie = activeZombies.find(
-          z => z.mesh === closestHit.object || z.mesh.children.includes(closestHit.object)
-        );
+      _headPos.copy(this.mesh.position);
+      _headPos.y += 1.6;
+
+      _shootRaycaster.set(_headPos, _spreadForward);
+      _shootRaycaster.far = this.maxShootingRange;
+
+      const hits = _shootRaycaster.intersectObjects(candidateTargets, true);
+
+      if (hits.length > 0) {
+        const hit = hits[0];
+        let hitZombie = null;
+
+        let obj = hit.object;
+        while (obj) {
+          hitZombie = activeZombies.find(z => z.mesh === obj);
+          if (hitZombie) break;
+          obj = obj.parent;
+        }
 
         if (hitZombie) {
-          hitZombie.takeDamage(w.damage);
-          if (this.effects) this.effects.spawnBlood(closestHit.point);
+          const isHeadshot = (hit.point.y - hitZombie.mesh.position.y) > 1.45 * hitZombie.archetype.scale;
+          const finalDmg = isHeadshot ? w.damage * 2.0 : w.damage;
+
+          hitZombie.takeDamage(finalDmg);
+
+          if (this.effects) {
+            this.effects.spawnBlood(hit.point);
+            if (isHeadshot) {
+              this.effects.addShake(0.12);
+              this.effects.showBanner('CRITICAL HEADSHOT!', '#ff2222');
+            }
+          }
         } else {
-          if (this.effects) this.effects.spawnSpark(closestHit.point);
+          if (this.effects) {
+            this.effects.spawnSpark(hit.point);
+          }
         }
       }
     }
   }
 
-  takeDamage(amount, fromPosition = null) {
+  takeDamage(amount, sourcePos = null) {
+    if (this.health <= 0) return;
     this.health = Math.max(0, this.health - amount);
 
-    if (this.health <= 25 && this.health > 0) {
-      if (this.effects) this.effects.setLowHealthEffect(true);
-      if (this.sound) this.sound.setLowHealthHeartbeat(true);
-    }
-
-    events.emit('playerHurt', {
-      amount,
-      from: fromPosition,
-      health: this.health
-    });
-
-    if (this.sound) this.sound.playerHurt();
+    if (this.sound) this.sound.playerHit();
     if (this.effects) {
-      this.effects.addShake(0.3);
       this.effects.flashDamage();
+      this.effects.addShake(0.22);
+      if (sourcePos) {
+        this.effects.showDamageArc(this.mesh.position, this.yaw, sourcePos);
+      }
     }
 
-    const bar = document.getElementById('health-bar');
-    if (bar) bar.style.width = `${(this.health / this.maxHealth) * 100}%`;
+    if (this.health <= 35 && this.health > 0) {
+      if (this.sound) this.sound.setLowHealthHeartbeat(true);
+      if (this.effects) this.effects.setLowHealthEffect(true);
+    }
+
+    events.emit('playerDamaged', { health: this.health, maxHealth: this.maxHealth });
+
+    if (this.health <= 0) {
+      this.die();
+    }
+  }
+
+  heal(amount) {
+    if (this.health <= 0) return;
+    this.health = Math.min(this.maxHealth, this.health + amount);
+
+    if (this.health > 35) {
+      if (this.sound) this.sound.setLowHealthHeartbeat(false);
+      if (this.effects) this.effects.setLowHealthEffect(false);
+    }
+
+    if (this.sound) this.sound.healthPickup();
+    events.emit('playerHealed', { health: this.health, maxHealth: this.maxHealth });
+  }
+
+  die() {
+    if (this.sound) {
+      this.sound.setLowHealthHeartbeat(false);
+      this.sound.playerDeath();
+    }
+    if (this.effects) {
+      this.effects.setLowHealthEffect(false);
+      this.effects.showBanner('SIGNAL LOST — YOU DIED', '#ff0000');
+    }
+    events.emit('gameLost');
   }
 }

@@ -2,6 +2,13 @@ import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { events } from '../core/Events.js';
 
+// Module-level scratch vectors to eliminate per-frame allocations
+const _carForward = new THREE.Vector3();
+const _upAxis = new THREE.Vector3(0, 1, 0);
+const _carStep = new THREE.Vector3();
+const _testCarPos = new THREE.Vector3();
+const _sideOffset = new THREE.Vector3();
+
 export class Vehicle {
   constructor(scene, sound, effects) {
     this.scene = scene;
@@ -19,8 +26,8 @@ export class Vehicle {
     // Build Low-Poly Muscle Car 3D Rig
     this.mesh = new THREE.Group();
 
-    // 1. Muscle Car Body (Sleek aggressive red/black)
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x991111 });
+    // 1. Muscle Car Body (Sleek aggressive red/black PBR finish)
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x991111, roughness: 0.35, metalness: 0.85 });
     const chassisGeo = new THREE.BoxGeometry(2.3, 0.65, 4.4);
     this.chassis = new THREE.Mesh(chassisGeo, bodyMat);
     this.chassis.position.y = 0.55;
@@ -29,7 +36,7 @@ export class Vehicle {
     this.mesh.add(this.chassis);
 
     // 2. Cabin & Windshield
-    const cabinMat = new THREE.MeshLambertMaterial({ color: 0x14181f });
+    const cabinMat = new THREE.MeshStandardMaterial({ color: 0x14181f, roughness: 0.20, metalness: 0.90 });
     const cabinGeo = new THREE.BoxGeometry(1.95, 0.62, 2.3);
     const cabin = new THREE.Mesh(cabinGeo, cabinMat);
     cabin.position.set(0, 1.15, -0.3);
@@ -37,7 +44,7 @@ export class Vehicle {
     this.mesh.add(cabin);
 
     // 3. 4 Low-Poly Wheels
-    const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.85, metalness: 0.1 });
     const wheelGeo = new THREE.BoxGeometry(0.4, 0.7, 0.7);
     this.wheels = [];
     const wheelOffsets = [
@@ -128,9 +135,9 @@ export class Vehicle {
     this.isOccupied = false;
     player.mesh.visible = true;
 
-    // Eject player slightly to the left of the car
-    const sideOffset = new THREE.Vector3(-2.2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
-    player.mesh.position.copy(this.mesh.position).add(sideOffset);
+    // Eject player slightly to the left of the car without runtime allocation
+    _sideOffset.set(-2.2, 0, 0).applyAxisAngle(_upAxis, this.yaw);
+    player.mesh.position.copy(this.mesh.position).add(_sideOffset);
     player.mesh.position.y = 0;
 
     if (this.sound) this.sound.stopEngine();
@@ -220,24 +227,24 @@ export class Vehicle {
   }
 
   moveWithCollisions(dt, colliders) {
-    const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
-    const step = forward.multiplyScalar(this.speed * dt);
+    _carForward.set(0, 0, 1).applyAxisAngle(_upAxis, this.yaw);
+    _carStep.copy(_carForward).multiplyScalar(this.speed * dt);
 
     // Check X axis
-    const testPosX = this.mesh.position.clone();
-    testPosX.x += step.x;
-    if (!this.checkCarCollision(testPosX, colliders)) {
-      this.mesh.position.x = testPosX.x;
+    _testCarPos.copy(this.mesh.position);
+    _testCarPos.x += _carStep.x;
+    if (!this.checkCarCollision(_testCarPos, colliders)) {
+      this.mesh.position.x = _testCarPos.x;
     } else {
       this.onBuildingCrash(Math.abs(this.speed));
       this.speed *= -0.3; // Bounce back
     }
 
     // Check Z axis
-    const testPosZ = this.mesh.position.clone();
-    testPosZ.z += step.z;
-    if (!this.checkCarCollision(testPosZ, colliders)) {
-      this.mesh.position.z = testPosZ.z;
+    _testCarPos.copy(this.mesh.position);
+    _testCarPos.z += _carStep.z;
+    if (!this.checkCarCollision(_testCarPos, colliders)) {
+      this.mesh.position.z = _testCarPos.z;
     } else {
       this.onBuildingCrash(Math.abs(this.speed));
       this.speed *= -0.3; // Bounce back

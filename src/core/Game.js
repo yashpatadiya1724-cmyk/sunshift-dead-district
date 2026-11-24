@@ -2,8 +2,11 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { FilmPass } from 'three/examples/jsm/postprocessing/FilmPass.js';
+import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
 
@@ -21,6 +24,8 @@ import { ShiftSystem } from '../world/ShiftSystem.js';
 import { RelayManager } from '../world/Relays.js';
 import { Dialogue } from '../story/Dialogue.js';
 import { MissionManager } from '../story/MissionManager.js';
+import { SkyLighting } from '../world/SkyLighting.js';
+import { Atmosphere } from '../world/Atmosphere.js';
 
 export const GAME_STATES = {
   LOADING: 'LOADING',
@@ -31,6 +36,12 @@ export const GAME_STATES = {
   WIN: 'WIN',
   LOSE: 'LOSE'
 };
+
+// Module-level reusable scratch objects
+const _projScreenMatrix = new THREE.Matrix4();
+const _frustum = new THREE.Frustum();
+const _vehicleCamRear = new THREE.Vector3();
+const _upAxis = new THREE.Vector3(0, 1, 0);
 
 export class Game {
   constructor() {
@@ -58,6 +69,11 @@ export class Game {
     this.frameCount = 0;
     this.lastFpsUpdate = performance.now();
     this.fpsCounterEl = document.getElementById('fps-counter');
+
+    // Auto-detect Quality State (Monitors first 5s of gameplay)
+    this.autoDetectChecked = false;
+    this.autoDetectFrames = 0;
+    this.autoDetectTotalTime = 0;
 
     // Tutorial Flow State
     this.isShowingTutorial = false;
@@ -87,19 +103,20 @@ export class Game {
     const container = document.getElementById('game-container') || document.body;
     container.appendChild(this.renderer.domElement);
 
-    // 2. Lighting
+    // 2. Lighting with Optimized Shadow Camera Extents
     this.hemiLight = new THREE.HemisphereLight(CONFIG.shift.dayHemiSky, CONFIG.shift.dayHemiGround, CONFIG.shift.dayHemiIntensity);
     this.scene.add(this.hemiLight);
 
     this.dirLight = new THREE.DirectionalLight(CONFIG.shift.dayDirColor, CONFIG.shift.dayDirIntensity);
     this.dirLight.position.set(30, 50, 25);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.width = 2048;
-    this.dirLight.shadow.mapSize.height = 2048;
-    this.dirLight.shadow.camera.near = 0.5;
-    this.dirLight.shadow.camera.far = 140;
+    this.dirLight.shadow.mapSize.width = 1536;
+    this.dirLight.shadow.mapSize.height = 1536;
+    this.dirLight.shadow.camera.near = 1.0;
+    this.dirLight.shadow.camera.far = 110;
 
-    const d = 38;
+    // Tighter shadow frustum bounds (28 units radius)
+    const d = 28;
     this.dirLight.shadow.camera.left = -d;
     this.dirLight.shadow.camera.right = d;
     this.dirLight.shadow.camera.top = d;
@@ -108,37 +125,66 @@ export class Game {
     this.scene.add(this.dirLight);
     this.scene.add(this.dirLight.target);
 
-    // 3. Post-Processing Pipeline
+    // 3. Post-Processing Pipeline (GTAOPass, UnrealBloomPass, Vignette, FilmPass, SMAAPass)
     try {
       this.composer = new EffectComposer(this.renderer);
-      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.renderPassObj = new RenderPass(this.scene, this.camera);
+      this.composer.addPass(this.renderPassObj);
+
+      // Half-resolution GTAOPass for optimal laptop performance
+      try {
+        const halfW = Math.max(1, Math.floor(window.innerWidth * 0.5));
+        const halfH = Math.max(1, Math.floor(window.innerHeight * 0.5));
+        this.gtaoPass = new GTAOPass(this.scene, this.camera, halfW, halfH);
+        this.gtaoPass.blendIntensity = 0.8;
+        this.gtaoPass.pdSamples = 8;
+        const origGtaoSetSize = this.gtaoPass.setSize.bind(this.gtaoPass);
+        this.gtaoPass.setSize = (w, h) => {
+          origGtaoSetSize(Math.max(1, Math.floor(w * 0.5)), Math.max(1, Math.floor(h * 0.5)));
+        };
+        this.gtaoPass.enabled = false;
+        this.composer.addPass(this.gtaoPass);
+      } catch (gtaoErr) {
+        this.gtaoPass = null;
+      }
 
       this.bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        new THREE.Vector2(Math.floor(window.innerWidth * 0.5), Math.floor(window.innerHeight * 0.5)),
         CONFIG.shift.dayBloom,
         0.5,
         0.82
       );
       this.composer.addPass(this.bloomPass);
 
-      const vignettePass = new ShaderPass(VignetteShader);
-      vignettePass.uniforms['offset'].value = 1.05;
-      vignettePass.uniforms['darkness'].value = 1.25;
-      this.composer.addPass(vignettePass);
-      this.composer.addPass(new OutputPass());
+      this.vignettePass = new ShaderPass(VignetteShader);
+      this.vignettePass.uniforms['offset'].value = 1.05;
+      this.vignettePass.uniforms['darkness'].value = 1.25;
+      this.composer.addPass(this.vignettePass);
+
+      this.filmPass = new FilmPass(0.12, false);
+      this.composer.addPass(this.filmPass);
+
+      this.smaaPass = new SMAAPass(window.innerWidth, window.innerHeight);
+      this.composer.addPass(this.smaaPass);
+
+      this.outputPass = new OutputPass();
+      this.composer.addPass(this.outputPass);
     } catch (e) {
       console.warn('EffectComposer initialization failed, falling back to WebGLRenderer:', e);
       this.composer = null;
     }
 
-    // 4. Core Systems, Entities, Vehicle & Pickups
+    // 4. Core Systems, Physical Sky, Atmosphere, Entities, Vehicle & Pickups
     this.sound = new Sound();
     this.sound.setMasterVolume(this.settings.volume);
 
     this.effects = new Effects(this.scene);
     this.input = new Input();
 
-    this.city = new City(this.scene);
+    this.city = new City(this.scene, this.renderer);
+    this.skyLighting = new SkyLighting(this.scene, this.renderer, this.dirLight);
+    this.atmosphere = new Atmosphere(this.scene);
+
     this.shift = new ShiftSystem(this.scene, this.dirLight, this.hemiLight, this.bloomPass, this.city, this.sound, this.effects);
     this.player = new Player(this.scene, this.camera, this.input, this.sound, this.effects);
     this.player.sensitivity = this.settings.sensitivity;
@@ -194,6 +240,18 @@ export class Game {
       }
     });
 
+    // 5. Pre-warm WebGL shader pipelines to eliminate in-game hitching
+    try {
+      this.renderer.compile(this.scene, this.camera);
+      if (this.composer) {
+        this.composer.render();
+      } else {
+        this.renderer.render(this.scene, this.camera);
+      }
+    } catch (compileErr) {
+      console.warn('Pre-compile notice:', compileErr);
+    }
+
     this.clock = new THREE.Clock();
     this.menuCamAngle = 0;
     this.loop();
@@ -209,7 +267,8 @@ export class Game {
   }
 
   loadSettings() {
-    const defaults = { volume: 0.5, sensitivity: 0.0025, fov: 65, invertY: false, quality: 'HIGH' };
+    // Default quality is MEDIUM (HIGH only when explicitly selected by user)
+    const defaults = { volume: 0.5, sensitivity: 0.0025, fov: 65, invertY: false, quality: 'MEDIUM', userSetQuality: false };
     try {
       const saved = localStorage.getItem('sunshift_settings');
       return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
@@ -228,35 +287,40 @@ export class Game {
 
   setSensitivity(val) {
     this.settings.sensitivity = val;
-    this.player.sensitivity = val;
+    if (this.player) this.player.sensitivity = val;
     this.saveSettings();
   }
 
   setVolume(val) {
     this.settings.volume = val;
-    this.sound.setMasterVolume(val);
+    if (this.sound) this.sound.setMasterVolume(val);
     this.saveSettings();
   }
 
   setFov(val) {
     this.settings.fov = val;
-    this.camera.fov = val;
-    this.camera.updateProjectionMatrix();
+    if (this.camera) {
+      this.camera.fov = val;
+      this.camera.updateProjectionMatrix();
+    }
     this.saveSettings();
   }
 
   setInvertY(val) {
     this.settings.invertY = val;
-    this.player.invertY = val;
+    if (this.player) this.player.invertY = val;
     this.saveSettings();
   }
 
-  setQuality(presetName) {
+  setQuality(presetName, isUserAction = false) {
+    if (isUserAction) {
+      this.settings.userSetQuality = true;
+    }
     this.applyQuality(presetName);
   }
 
   applyQuality(presetName) {
-    const preset = CONFIG.quality[presetName] || CONFIG.quality.HIGH;
+    const preset = CONFIG.quality[presetName] || CONFIG.quality.MEDIUM;
     this.settings.quality = presetName;
     this.saveSettings();
 
@@ -264,12 +328,30 @@ export class Game {
     this.renderer.shadowMap.enabled = preset.shadows;
     this.renderer.setPixelRatio(preset.pixelRatio);
 
+    this.usePostProcessing = preset.postProcessing !== false;
+
     if (this.composer) {
       this.composer.setPixelRatio(preset.pixelRatio);
       this.composer.setSize(window.innerWidth, window.innerHeight);
     }
+    if (this.gtaoPass) {
+      this.gtaoPass.enabled = !!preset.gtao;
+    }
     if (this.bloomPass) {
-      this.bloomPass.enabled = preset.bloom;
+      this.bloomPass.enabled = !!preset.bloom;
+    }
+    if (this.vignettePass) {
+      this.vignettePass.enabled = !!preset.vignette;
+    }
+    if (this.filmPass) {
+      this.filmPass.enabled = !!preset.film;
+    }
+    if (this.smaaPass) {
+      this.smaaPass.enabled = !!preset.smaa;
+    }
+
+    if (this.city) {
+      this.city.setLightConesVisible(preset.lightCones !== false);
     }
 
     if (preset.shadows) {
@@ -281,6 +363,10 @@ export class Game {
       }
     }
 
+    if (this.atmosphere && this.city && this.shift) {
+      this.atmosphere.setShiftPhase(this.shift.isNight, this.city.groundMat, presetName);
+    }
+
     if (shadowsChanged) {
       this.scene.traverse((child) => {
         if (child.isMesh && child.material) {
@@ -289,6 +375,23 @@ export class Game {
         }
       });
     }
+  }
+
+  showToast(msg) {
+    let toast = document.getElementById('perf-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'perf-toast';
+      toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(18,20,26,0.92);border:1px solid #ffaa00;color:#ffaa00;padding:10px 20px;border-radius:8px;font-family:sans-serif;font-size:13px;font-weight:bold;letter-spacing:1px;box-shadow:0 4px 20px rgba(0,0,0,0.8);z-index:9999;transition:opacity 0.5s ease;pointer-events:none;';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    toast.style.display = 'block';
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => { if (toast) toast.style.display = 'none'; }, 500);
+    }, 3000);
   }
 
   setupEvents() {
@@ -305,6 +408,13 @@ export class Game {
       if (this.state === GAME_STATES.PLAYING) {
         this.stats.shiftsSurvived++;
         if (this.effects) this.effects.flashShift(isNight);
+
+        if (this.skyLighting) {
+          this.skyLighting.setShiftPhase(isNight);
+        }
+        if (this.atmosphere && this.city) {
+          this.atmosphere.setShiftPhase(isNight, this.city.groundMat, this.settings.quality);
+        }
 
         if (isNight) {
           this.spawnExtraNightZombies();
@@ -340,7 +450,7 @@ export class Game {
     this.zombies = [];
     this.clearExtraNightZombies();
 
-    const count = this.settings.quality === 'LOW' ? 14 : CONFIG.zombie.count;
+    const count = (CONFIG.zombie.counts && CONFIG.zombie.counts[this.settings.quality]) || 16;
 
     for (let i = 0; i < count; i++) {
       let pos = new THREE.Vector3();
@@ -373,8 +483,9 @@ export class Game {
   }
 
   spawnExtraNightZombies() {
+    const extraCount = this.settings.quality === 'LOW' ? 3 : (this.settings.quality === 'MEDIUM' ? 5 : CONFIG.shift.nightExtraSpawns);
     const pPos = this.player.mesh.position;
-    for (let i = 0; i < CONFIG.shift.nightExtraSpawns; i++) {
+    for (let i = 0; i < extraCount; i++) {
       let pos = new THREE.Vector3();
       let valid = false;
 
@@ -473,6 +584,10 @@ export class Game {
     this.stats.zombiesKilled = 0;
     this.stats.relaysCollected = 0;
     this.stats.shiftsSurvived = 0;
+    // Reset auto-detect monitoring
+    this.autoDetectChecked = false;
+    this.autoDetectFrames = 0;
+    this.autoDetectTotalTime = 0;
     this.noise = 0;
     this.input.reset();
 
@@ -502,6 +617,33 @@ export class Game {
     this.input.reset();
     this.requestPointerLockSafe();
     events.emit('stateChange', this.state);
+  }
+
+  showTutorial(index) {
+    if (index >= this.tutorialSteps.length) {
+      this.isShowingTutorial = false;
+      const el = document.getElementById('tutorial-box');
+      if (el) el.style.display = 'none';
+      localStorage.setItem('sunshift_tutorial_seen', 'true');
+      return;
+    }
+
+    this.isShowingTutorial = true;
+    this.tutorialIndex = index;
+    const step = this.tutorialSteps[index];
+
+    const box = document.getElementById('tutorial-box');
+    const tag = document.getElementById('tutorial-step-tag');
+    const msg = document.getElementById('tutorial-msg');
+
+    if (box) box.style.display = 'block';
+    if (tag) tag.textContent = step.tag;
+    if (msg) msg.textContent = step.msg;
+  }
+
+  advanceTutorial() {
+    this.showTutorial(this.tutorialIndex + 1);
+>>>>>>> origin/perf/fps
   }
 
   pause() {
@@ -559,18 +701,12 @@ export class Game {
     if (this.dialogue) this.dialogue.clear();
     this.noise = 0;
 
-    this.clearExtraNightZombies();
-    this.player.reset();
-    this.player.unlockedWeapons = { pistol: true, shotgun: false, rifle: false };
-    this.vehicle.reset();
-    this.pickups.reset();
-    this.relays.reset();
-    this.shift.reset();
-    this.spawnZombies();
-
     // Clear low health effects
     if (this.sound) this.sound.setLowHealthHeartbeat(false);
     if (this.effects) this.effects.setLowHealthEffect(false);
+
+    events.emit('stateChange', this.state);
+  }
 
     events.emit('stateChange', this.state);
   }
@@ -669,10 +805,19 @@ export class Game {
     if (this.composer) {
       this.composer.setSize(window.innerWidth, window.innerHeight);
     }
+    if (this.gtaoPass) {
+      this.gtaoPass.setSize(window.innerWidth, window.innerHeight);
+    }
+    if (this.bloomPass) {
+      this.bloomPass.resolution.set(Math.floor(window.innerWidth * 0.5), Math.floor(window.innerHeight * 0.5));
+    }
+    if (this.smaaPass) {
+      this.smaaPass.setSize(window.innerWidth, window.innerHeight);
+    }
   }
 
   renderPass() {
-    if (this.composer) {
+    if (this.usePostProcessing && this.composer) {
       this.composer.render();
     } else {
       this.renderer.render(this.scene, this.camera);
@@ -703,23 +848,45 @@ export class Game {
         Math.sin(this.menuCamAngle) * 36
       );
       this.camera.lookAt(0, 3, 0);
+      if (this.skyLighting) this.skyLighting.update(dt);
       this.shift.applyShiftVisuals(dt);
       this.renderPass();
       return;
     }
 
     if (this.state === GAME_STATES.PLAYING) {
+      // Auto-detect: first 5 seconds FPS monitoring
+      if (!this.autoDetectChecked && !this.settings.userSetQuality) {
+        this.autoDetectTotalTime += dt;
+        this.autoDetectFrames++;
+        if (this.autoDetectTotalTime >= 5.0) {
+          this.autoDetectChecked = true;
+          const avgFps = this.autoDetectFrames / this.autoDetectTotalTime;
+          if (avgFps < 30) {
+            if (this.settings.quality === 'HIGH') {
+              this.setQuality('MEDIUM', false);
+              this.showToast('Quality lowered for performance');
+            } else if (this.settings.quality === 'MEDIUM') {
+              this.setQuality('LOW', false);
+              this.showToast('Quality lowered for performance');
+            }
+          }
+        }
+      }
+
       this.effects.update(dt);
       this.shift.update(dt);
+      if (this.skyLighting) this.skyLighting.update(dt);
       this.vehicle.update(dt, this.input, this.city.colliders, this.zombies, this.shift.isNight);
       this.pickups.update(dt, this.player);
 
       const activeEntityPos = this.vehicle.isOccupied ? this.vehicle.mesh.position : this.player.mesh.position;
+      if (this.atmosphere) this.atmosphere.update(dt, activeEntityPos);
 
       if (this.vehicle.isOccupied) {
-        const rear = new THREE.Vector3(0, CONFIG.vehicle.camHeight, -CONFIG.vehicle.camDistance)
-          .applyAxisAngle(new THREE.Vector3(0, 1, 0), this.vehicle.yaw);
-        this.camera.position.copy(this.vehicle.mesh.position).add(rear);
+        _vehicleCamRear.set(0, CONFIG.vehicle.camHeight, -CONFIG.vehicle.camDistance)
+          .applyAxisAngle(_upAxis, this.vehicle.yaw);
+        this.camera.position.copy(this.vehicle.mesh.position).add(_vehicleCamRear);
         this.camera.lookAt(
           this.vehicle.mesh.position.x,
           this.vehicle.mesh.position.y + 1.2,
@@ -730,14 +897,20 @@ export class Game {
       }
 
       this.dirLight.position.set(
-        activeEntityPos.x + 30,
-        activeEntityPos.y + 50,
-        activeEntityPos.z + 25
+        activeEntityPos.x + 28,
+        activeEntityPos.y + 45,
+        activeEntityPos.z + 22
       );
       this.dirLight.target.position.copy(activeEntityPos);
 
       this.relays.update(dt, this.vehicle.isOccupied ? { mesh: { position: this.vehicle.mesh.position } } : this.player);
-      this.city.updateStreetlights(activeEntityPos);
+
+      const qPreset = CONFIG.quality[this.settings.quality] || CONFIG.quality.MEDIUM;
+      this.city.updateStreetlights(activeEntityPos, qPreset.pointLights);
+
+      // Frustum calculation for zombie LOD & animation culling
+      _projScreenMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+      _frustum.setFromProjectionMatrix(_projScreenMatrix);
 
       // Story Mission Manager update
       if (this.missionManager) {
@@ -768,7 +941,7 @@ export class Game {
           }
           continue;
         }
-        z.update(dt, this.player, this.shift.isNight, this.city.colliders);
+        z.update(dt, this.player, this.shift.isNight, this.city.colliders, _frustum);
       }
 
       if (this.player.health <= 0) {

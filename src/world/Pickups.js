@@ -9,10 +9,22 @@ export class PickupsManager {
     this.pickups = [];
     this.bobTimer = 0;
 
-    // Shared geometries & materials
+    // Shared geometries & PBR materials
     this.boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55);
-    this.healthMat = new THREE.MeshLambertMaterial({ color: 0x00ff66 });
-    this.ammoMat = new THREE.MeshLambertMaterial({ color: 0xffaa00 });
+    this.healthMat = new THREE.MeshStandardMaterial({
+      color: 0x00ff66,
+      emissive: 0x00ff66,
+      emissiveIntensity: 0.8,
+      roughness: 0.3,
+      metalness: 0.2
+    });
+    this.ammoMat = new THREE.MeshStandardMaterial({
+      color: 0xffaa00,
+      emissive: 0xffaa00,
+      emissiveIntensity: 0.8,
+      roughness: 0.3,
+      metalness: 0.2
+    });
   }
 
   reset() {
