@@ -224,6 +224,36 @@ runTest('Quality presets scale fidelity correctly (shadow maps and pixel ratios)
   assert(HIGH.pixelRatio > LOW.pixelRatio, 'HIGH pixel ratio must exceed LOW');
 });
 
+// ===== SUITE 6: KINEMATICS, SENSORY AGGRO & RESOURCES =====
+console.log('\n--- Suite 6: Kinematics, Sensory Aggro & Resource Mechanics ---');
+
+runTest('Player jump kinematics apex height and sprint velocity calculate cleanly', () => {
+  const { walkSpeed, sprintMultiplier, jumpStrength, gravity } = CONFIG.player;
+  const sprintSpeed = walkSpeed * sprintMultiplier;
+  assert.strictEqual(sprintSpeed, 12.8, 'Sprint speed must be 12.8 m/s (8.0 * 1.6)');
+
+  // Apex height h = v^2 / (2 * |g|)
+  const apexHeight = (jumpStrength * jumpStrength) / (2 * Math.abs(gravity));
+  assert(apexHeight >= 1.5 && apexHeight <= 2.2, `Player jump apex (${apexHeight.toFixed(2)}m) must fall in realistic 1.5m - 2.2m clearance range`);
+});
+
+runTest('Zombie night sensory aggro doubles daytime awareness radius', () => {
+  const { agroRangeDay, agroRangeNight, soundHearingRadius } = CONFIG.zombie;
+  assert.strictEqual(agroRangeNight, agroRangeDay * 2, 'Night aggro range must be double the day aggro range');
+  assert(soundHearingRadius > agroRangeDay, 'Gunshot hearing radius must alert zombies beyond visual day sight');
+});
+
+runTest('Pickups balance health and ammunition resupply capacities', () => {
+  const { healthHealAmount, ammoRefill, dropChance } = CONFIG.pickups;
+  const { maxHealth } = CONFIG.player;
+  const { shotgun, rifle } = CONFIG.weapons;
+
+  assert(healthHealAmount <= maxHealth * 0.5, 'Single medkit should not overheal more than 50% of maximum HP');
+  assert.strictEqual(ammoRefill.rifle, rifle.magSize, 'Rifle pickup should refill exactly 1 full magazine');
+  assert(ammoRefill.shotgun >= shotgun.magSize, 'Shotgun pickup should refill at least 1 full magazine');
+  assert(dropChance > 0.05 && dropChance <= 0.4, 'Item drop rate must remain balanced between 5% and 40%');
+});
+
 console.log('\n================================');
 console.log(`Results: ${testsPassed} passed, ${testsFailed} failed`);
 console.log('================================');
