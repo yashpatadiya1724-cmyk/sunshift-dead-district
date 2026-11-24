@@ -581,4 +581,31 @@ export class City {
     }
     return false;
   }
+
+  setWetAsphalt(isWet) {
+    if (this.groundMat) {
+      this.groundMat.roughness = isWet ? 0.18 : 0.85;
+      this.groundMat.metalness = isWet ? 0.65 : 0.08;
+      this.groundMat.needsUpdate = true;
+    }
+  }
+
+  setAnisotropy(val) {
+    const aniso = Math.min(val || 1, 16);
+    if (this.groundMat?.map) {
+      this.groundMat.map.anisotropy = aniso;
+      this.groundMat.map.needsUpdate = true;
+    }
+    for (let i = 0; i < this.windowMaterials.length; i++) {
+      const mat = this.windowMaterials[i];
+      if (mat.map) {
+        mat.map.anisotropy = aniso;
+        mat.map.needsUpdate = true;
+      }
+      if (mat.emissiveMap) {
+        mat.emissiveMap.anisotropy = aniso;
+        mat.emissiveMap.needsUpdate = true;
+      }
+    }
+  }
 }

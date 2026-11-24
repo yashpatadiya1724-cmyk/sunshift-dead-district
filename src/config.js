@@ -163,12 +163,15 @@ export const CONFIG = {
       shadowMapSize: 512,
       bloom: false,
       gtao: false,
-      film: false,
       smaa: false,
-      vignette: false,
-      pixelRatio: 0.85,
+      filmGrain: false,
+      rain: false,
+      wetAsphalt: false,
+      lightCones: false,
       pointLights: 0,
-      lightCones: false
+      zombieCount: 16,
+      anisotropy: 1,
+      pixelRatio: 0.85
     },
     MEDIUM: {
       postProcessing: true,
@@ -176,25 +179,47 @@ export const CONFIG = {
       shadowMapSize: 1024,
       bloom: true,
       gtao: false,
-      film: false,
       smaa: false,
-      vignette: true,
-      pixelRatio: 1.0,
+      filmGrain: false,
+      rain: false,
+      wetAsphalt: false,
+      lightCones: true,
       pointLights: 3,
-      lightCones: true
+      zombieCount: 20,
+      anisotropy: 2,
+      pixelRatio: 1.0
     },
     HIGH: {
       postProcessing: true,
       shadows: true,
-      shadowMapSize: 1024,
+      shadowMapSize: 1536,
       bloom: true,
       gtao: false,
-      film: true,
       smaa: false,
-      vignette: true,
-      pixelRatio: 1.0,
+      filmGrain: true,
+      rain: false,
+      wetAsphalt: false,
+      lightCones: true,
       pointLights: 6,
-      lightCones: true
+      zombieCount: 20,
+      anisotropy: 4,
+      pixelRatio: 1.25
+    },
+    ULTRA: {
+      postProcessing: true,
+      shadows: true,
+      shadowMapSize: 2048,
+      bloom: true,
+      gtao: true,
+      smaa: true,
+      filmGrain: true,
+      rain: true,
+      wetAsphalt: true,
+      lightCones: true,
+      pointLights: 6,
+      zombieCount: 24,
+      anisotropy: 8,
+      pixelRatio: 1.5
     }
   }
 };

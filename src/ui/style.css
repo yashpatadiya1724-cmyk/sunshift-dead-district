@@ -67,6 +67,27 @@ body, html {
   pointer-events: none;
 }
 
+#toast-notification {
+  position: fixed;
+  bottom: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(12, 16, 22, 0.92);
+  border: 1px solid #ffaa00;
+  color: #ffcc00;
+  padding: 8px 20px;
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  border-radius: 4px;
+  box-shadow: 0 0 14px rgba(255, 170, 0, 0.4);
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
 /* Post-Processing Overlays */
 #damage-flash {
   position: fixed;

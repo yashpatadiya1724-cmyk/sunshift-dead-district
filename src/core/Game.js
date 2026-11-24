@@ -66,6 +66,12 @@ export class Game {
 
     this.settings = this.loadSettings();
 
+    // Auto-detect & Benchmark Tracking
+    this.autoBenchmarkTimer = 0;
+    this.autoBenchmarkFrames = 0;
+    this.autoBenchmarkDone = (this.settings.qualityMode === 'MANUAL');
+    this.hasAutoTierChanged = false;
+
     // FPS Display
     this.showFps = false;
     this.frameCount = 0;
@@ -101,9 +107,18 @@ export class Game {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.info.autoReset = false;
 
     const container = document.getElementById('game-container') || document.body;
     container.appendChild(this.renderer.domElement);
+
+    // Read GPU info & set initial tier if in AUTO mode
+    this.gpuFullName = this.getGPUInfo();
+    this.gpuShortName = this.formatGPUShortName(this.gpuFullName);
+    if (this.settings.qualityMode === 'AUTO') {
+      const initialTier = this.determineInitialTier(this.gpuFullName);
+      this.settings.quality = initialTier;
+    }
 
     // 2. Lighting with Optimized Shadow Camera Extents
     this.hemiLight = new THREE.HemisphereLight(CONFIG.shift.dayHemiSky, CONFIG.shift.dayHemiGround, CONFIG.shift.dayHemiIntensity);
@@ -130,26 +145,21 @@ export class Game {
     // 3. Post-Processing Pipeline (GTAOPass, UnrealBloomPass, Vignette, FilmPass, SMAAPass)
     try {
       this.composer = new EffectComposer(this.renderer);
-      this.renderPassObj = new RenderPass(this.scene, this.camera);
-      this.composer.addPass(this.renderPassObj);
+      this.baseRenderPass = new RenderPass(this.scene, this.camera);
+      this.composer.addPass(this.baseRenderPass);
 
-      // Half-resolution GTAOPass for optimal laptop performance
+      // Half/Full resolution GTAOPass for optimal performance
       try {
-        const halfW = Math.max(1, Math.floor(window.innerWidth * 0.5));
-        const halfH = Math.max(1, Math.floor(window.innerHeight * 0.5));
-        this.gtaoPass = new GTAOPass(this.scene, this.camera, halfW, halfH);
-        this.gtaoPass.blendIntensity = 0.8;
+        this.gtaoPass = new GTAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
+        this.gtaoPass.blendIntensity = 0.85;
         this.gtaoPass.pdSamples = 8;
-        const origGtaoSetSize = this.gtaoPass.setSize.bind(this.gtaoPass);
-        this.gtaoPass.setSize = (w, h) => {
-          origGtaoSetSize(Math.max(1, Math.floor(w * 0.5)), Math.max(1, Math.floor(h * 0.5)));
-        };
         this.gtaoPass.enabled = false;
         this.composer.addPass(this.gtaoPass);
       } catch (gtaoErr) {
         this.gtaoPass = null;
       }
 
+      // UnrealBloomPass
       this.bloomPass = new UnrealBloomPass(
         new THREE.Vector2(Math.floor(window.innerWidth * 0.5), Math.floor(window.innerHeight * 0.5)),
         CONFIG.shift.dayBloom,
@@ -158,20 +168,27 @@ export class Game {
       );
       this.composer.addPass(this.bloomPass);
 
+      // VignettePass
       this.vignettePass = new ShaderPass(VignetteShader);
       this.vignettePass.uniforms['offset'].value = 1.05;
       this.vignettePass.uniforms['darkness'].value = 1.25;
       this.composer.addPass(this.vignettePass);
 
+      // ColorGradingPass
       this.colorGradingPass = new ShaderPass(ColorGradingShader);
       this.composer.addPass(this.colorGradingPass);
 
-      this.filmPass = new FilmPass(0.12, false);
+      // FilmPass (Grain)
+      this.filmPass = new FilmPass(0.18, false);
+      this.filmPass.enabled = false;
       this.composer.addPass(this.filmPass);
 
+      // SMAAPass
       this.smaaPass = new SMAAPass(window.innerWidth, window.innerHeight);
+      this.smaaPass.enabled = false;
       this.composer.addPass(this.smaaPass);
 
+      // OutputPass
       this.outputPass = new OutputPass();
       this.composer.addPass(this.outputPass);
     } catch (e) {
@@ -232,7 +249,8 @@ export class Game {
     this.zombies = [];
     this.extraNightZombies = [];
 
-    this.applyQuality(this.settings.quality);
+    const isAutoInit = (this.settings.qualityMode === 'AUTO');
+    this.applyQuality(this.settings.quality, isAutoInit);
     this.setupEvents();
     this.spawnZombies();
 
@@ -298,8 +316,15 @@ export class Game {
   }
 
   loadSettings() {
-    // Default quality is MEDIUM (HIGH only when explicitly selected by user)
-    const defaults = { volume: 0.5, sensitivity: 0.0025, fov: 65, invertY: false, quality: 'MEDIUM', userSetQuality: false };
+    const defaults = {
+      volume: 0.5,
+      sensitivity: 0.0025,
+      fov: 65,
+      invertY: false,
+      qualityMode: 'AUTO',
+      quality: 'MEDIUM',
+      userSetQuality: false
+    };
     try {
       const saved = localStorage.getItem('sunshift_settings');
       return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
@@ -314,6 +339,57 @@ export class Game {
     } catch (e) {
       console.warn('Could not save settings', e);
     }
+  }
+
+  getGPUInfo() {
+    try {
+      const gl = this.renderer.getContext();
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      if (dbg) {
+        return gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || 'Unknown GPU';
+      }
+    } catch (e) {}
+    return 'Unknown GPU';
+  }
+
+  formatGPUShortName(fullName) {
+    if (!fullName || fullName === 'Unknown GPU') return 'Unknown GPU';
+    if (fullName.includes('Iris(R) Xe') || fullName.includes('Iris Xe')) return 'Intel Iris Xe';
+    if (fullName.includes('UHD Graphics')) return 'Intel UHD';
+    if (fullName.includes('RTX')) {
+      const m = fullName.match(/RTX\s*[0-9]{3,4}[A-Za-z]*/i);
+      return m ? `NVIDIA ${m[0]}` : 'NVIDIA RTX';
+    }
+    if (fullName.includes('GTX')) {
+      const m = fullName.match(/GTX\s*[0-9]{3,4}[A-Za-z]*/i);
+      return m ? `NVIDIA ${m[0]}` : 'NVIDIA GTX';
+    }
+    if (fullName.includes('Radeon')) return 'AMD Radeon';
+    if (fullName.includes('Apple')) return 'Apple GPU';
+    if (fullName.includes('Mali')) return 'ARM Mali';
+    if (fullName.includes('Adreno')) return 'Qualcomm Adreno';
+    if (fullName.includes('SwiftShader') || fullName.includes('llvmpipe')) return 'Software GPU';
+    return fullName.slice(0, 24);
+  }
+
+  determineInitialTier(gpuName) {
+    const name = (gpuName || '').toLowerCase();
+    const highKeywords = ['nvidia', 'geforce', 'rtx', 'gtx', 'radeon rx', 'apple m'];
+    const medKeywords = ['intel', 'uhd', 'iris', 'mali', 'adreno', 'swiftshader', 'llvmpipe'];
+
+    for (const kw of highKeywords) {
+      if (name.includes(kw)) return 'HIGH';
+    }
+    for (const kw of medKeywords) {
+      if (name.includes(kw)) return 'MEDIUM';
+    }
+    return 'MEDIUM';
+  }
+
+  isIntegratedOrSoftwareGPU(gpuName) {
+    const name = (gpuName || '').toLowerCase();
+    const intKeywords = ['intel', 'uhd', 'iris', 'mali', 'adreno', 'swiftshader', 'llvmpipe', 'software'];
+    return intKeywords.some(kw => name.includes(kw));
   }
 
   setSensitivity(val) {
@@ -343,16 +419,31 @@ export class Game {
     this.saveSettings();
   }
 
-  setQuality(presetName, isUserAction = false) {
-    if (isUserAction) {
-      this.settings.userSetQuality = true;
-    }
-    this.applyQuality(presetName);
+  setQuality(presetName, isAuto = false) {
+    this.applyQuality(presetName, isAuto);
   }
 
-  applyQuality(presetName) {
-    const preset = CONFIG.quality[presetName] || CONFIG.quality.MEDIUM;
-    this.settings.quality = presetName;
+  setAutoQuality() {
+    this.settings.qualityMode = 'AUTO';
+    this.autoBenchmarkDone = false;
+    this.autoBenchmarkTimer = 0;
+    this.autoBenchmarkFrames = 0;
+    this.hasAutoTierChanged = false;
+    this.autoUpgradeLocked = false;
+    this.autoBenchmarkStage = 'INITIAL';
+    const initial = this.determineInitialTier(this.gpuFullName);
+    this.applyQuality(initial, true);
+  }
+
+  applyQuality(presetName, isAuto = false) {
+    const tier = CONFIG.quality[presetName] ? presetName : 'MEDIUM';
+    const preset = CONFIG.quality[tier];
+    this.settings.quality = tier;
+    if (!isAuto) {
+      this.settings.qualityMode = 'MANUAL';
+      this.settings.userSetQuality = true;
+      this.autoBenchmarkDone = true;
+    }
     this.saveSettings();
 
     const shadowsChanged = this.renderer.shadowMap.enabled !== preset.shadows;
@@ -384,6 +475,15 @@ export class Game {
     if (this.city) {
       this.city.setLightConesVisible(preset.lightCones !== false);
     }
+    if (this.gtaoPass) {
+      this.gtaoPass.enabled = preset.gtao;
+    }
+    if (this.filmPass) {
+      this.filmPass.enabled = preset.filmGrain;
+    }
+    if (this.smaaPass) {
+      this.smaaPass.enabled = preset.smaa;
+    }
 
     if (preset.shadows) {
       this.dirLight.shadow.mapSize.width = preset.shadowMapSize;
@@ -395,7 +495,15 @@ export class Game {
     }
 
     if (this.atmosphere && this.city && this.shift) {
-      this.atmosphere.setShiftPhase(this.shift.isNight, this.city.groundMat, presetName);
+      this.atmosphere.setShiftPhase(this.shift.isNight, this.city.groundMat, tier);
+    }
+    if (this.city) {
+      this.city.setWetAsphalt(preset.wetAsphalt);
+      this.city.setLightConesVisible(preset.lightCones !== false);
+      this.city.setAnisotropy(preset.anisotropy);
+    }
+    if (this.effects) {
+      this.effects.setRainEnabled(preset.rain);
     }
 
     if (shadowsChanged) {
@@ -405,6 +513,11 @@ export class Game {
           else child.material.needsUpdate = true;
         }
       });
+    }
+
+    const tierDisplayEl = document.getElementById('quality-tier-display');
+    if (tierDisplayEl) {
+      tierDisplayEl.innerText = `ACTIVE TIER: ${tier} (${this.settings.qualityMode})`;
     }
   }
 
@@ -481,7 +594,8 @@ export class Game {
     this.zombies = [];
     this.clearExtraNightZombies();
 
-    const count = (CONFIG.zombie.counts && CONFIG.zombie.counts[this.settings.quality]) || 16;
+    const preset = CONFIG.quality[this.settings.quality] || CONFIG.quality.MEDIUM;
+    const count = preset.zombieCount || 20;
 
     for (let i = 0; i < count; i++) {
       let pos = new THREE.Vector3();
@@ -832,13 +946,13 @@ export class Game {
     if (this.composer) {
       this.composer.setSize(window.innerWidth, window.innerHeight);
     }
-    if (this.gtaoPass) {
+    if (this.gtaoPass && typeof this.gtaoPass.setSize === 'function') {
       this.gtaoPass.setSize(window.innerWidth, window.innerHeight);
     }
     if (this.bloomPass) {
       this.bloomPass.resolution.set(Math.floor(window.innerWidth * 0.5), Math.floor(window.innerHeight * 0.5));
     }
-    if (this.smaaPass) {
+    if (this.smaaPass && typeof this.smaaPass.setSize === 'function') {
       this.smaaPass.setSize(window.innerWidth, window.innerHeight);
     }
   }
@@ -849,11 +963,15 @@ export class Game {
     } else {
       this.renderer.render(this.scene, this.camera);
     }
+    this.lastFrameCalls = this.renderer.info.render.calls;
+    this.lastFrameTriangles = this.renderer.info.render.triangles;
   }
 
   loop() {
     requestAnimationFrame(() => this.loop());
     const dt = Math.min(this.clock.getDelta(), 0.1);
+
+    this.renderer.info.reset();
 
     // FPS Display Tracker
     this.frameCount++;
@@ -861,7 +979,10 @@ export class Game {
     if (now - this.lastFpsUpdate >= 500) {
       if (this.fpsCounterEl && this.showFps) {
         const fps = Math.round((this.frameCount * 1000) / (now - this.lastFpsUpdate));
-        this.fpsCounterEl.innerText = `FPS: ${fps}`;
+        const mode = this.settings.qualityMode === 'AUTO' ? 'AUTO' : 'MANUAL';
+        const calls = this.lastFrameCalls !== undefined ? this.lastFrameCalls : this.renderer.info.render.calls;
+        const tris = this.lastFrameTriangles !== undefined ? this.lastFrameTriangles : this.renderer.info.render.triangles;
+        this.fpsCounterEl.innerHTML = `FPS: ${fps} &nbsp;|&nbsp; GPU: ${this.gpuShortName} &nbsp;|&nbsp; TIER: ${this.settings.quality} (${mode}) &nbsp;|&nbsp; DC: ${calls} &nbsp;|&nbsp; TRI: ${tris.toLocaleString()}`;
       }
       this.frameCount = 0;
       this.lastFpsUpdate = now;
@@ -882,34 +1003,57 @@ export class Game {
     }
 
     if (this.state === GAME_STATES.PLAYING) {
-      // Auto-detect: first 5 seconds FPS monitoring
-      if (!this.autoDetectChecked && !this.settings.userSetQuality) {
-        this.autoDetectTotalTime += dt;
-        this.autoDetectFrames++;
-        if (this.autoDetectTotalTime >= 5.0) {
-          this.autoDetectChecked = true;
-          const avgFps = this.autoDetectFrames / this.autoDetectTotalTime;
-          if (avgFps < 30) {
-            if (this.settings.quality === 'HIGH') {
-              this.setQuality('MEDIUM', false);
-              this.showToast('Quality lowered for performance');
-            } else if (this.settings.quality === 'MEDIUM') {
-              this.setQuality('LOW', false);
-              this.showToast('Quality lowered for performance');
+      // Auto-quality benchmark
+      if (this.settings.qualityMode === 'AUTO' && !this.autoBenchmarkDone) {
+        this.autoBenchmarkTimer += dt;
+        this.autoBenchmarkFrames++;
+        if (this.autoBenchmarkTimer >= 6.0) {
+          const avgFps = this.autoBenchmarkFrames / this.autoBenchmarkTimer;
+          const tiers = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'];
+          const currentIdx = tiers.indexOf(this.settings.quality);
+          const isIntegrated = this.isIntegratedOrSoftwareGPU(this.gpuFullName);
+
+          if (this.autoBenchmarkStage === 'POST_UPGRADE') {
+            // After auto-upgrade, check if avg FPS is < 45
+            if (avgFps < 45 && currentIdx > 0) {
+              const lowerTier = tiers[currentIdx - 1];
+              this.applyQuality(lowerTier, true);
+              this.autoUpgradeLocked = true;
+              this.showToast(`Quality set to ${lowerTier} (auto)`);
+            }
+            this.autoBenchmarkDone = true;
+          } else {
+            // Initial stage
+            let newTier = null;
+            if (avgFps < 30 && currentIdx > 0) {
+              newTier = tiers[currentIdx - 1];
+              this.autoBenchmarkDone = true;
+            } else if (avgFps > 58 && !this.autoUpgradeLocked) {
+              // Intel/UHD/Iris/Mali/Adreno/SwiftShader GPU can only reach MEDIUM max
+              const maxAllowedTierIdx = isIntegrated ? tiers.indexOf('MEDIUM') : tiers.length - 1;
+              if (currentIdx < maxAllowedTierIdx) {
+                newTier = tiers[currentIdx + 1];
+                this.autoBenchmarkStage = 'POST_UPGRADE';
+                this.autoBenchmarkTimer = 0;
+                this.autoBenchmarkFrames = 0;
+              } else {
+                this.autoBenchmarkDone = true;
+              }
+            } else {
+              this.autoBenchmarkDone = true;
+            }
+
+            if (newTier && newTier !== this.settings.quality) {
+              this.applyQuality(newTier, true);
+              this.showToast(`Quality set to ${newTier} (auto)`);
             }
           }
         }
       }
 
-      this.effects.update(dt);
-      this.shift.update(dt);
-      if (this.skyLighting) this.skyLighting.update(dt);
-      this.vehicle.update(dt, this.input, this.city.colliders, this.zombies, this.shift.isNight);
-      this.pickups.update(dt, this.player);
-
       const activeEntityPos = this.vehicle.isOccupied ? this.vehicle.mesh.position : this.player.mesh.position;
+      this.effects.update(dt, activeEntityPos);
       if (this.atmosphere) this.atmosphere.update(dt, activeEntityPos);
-
       if (this.vehicle.isOccupied) {
         _vehicleCamRear.set(0, CONFIG.vehicle.camHeight, -CONFIG.vehicle.camDistance)
           .applyAxisAngle(_upAxis, this.vehicle.yaw);

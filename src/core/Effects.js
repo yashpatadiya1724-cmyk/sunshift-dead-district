@@ -41,6 +41,28 @@ export class Effects {
     this.flashMesh = new THREE.Mesh(flashGeo, flashMat);
     this.flashMesh.visible = false;
     this.scene.add(this.flashMesh);
+
+    // Rain Particle System (Pooled 300 points, 1 draw call, active in ULTRA)
+    this.rainCount = 300;
+    this.rainGeo = new THREE.BufferGeometry();
+    this.rainPositions = new Float32Array(this.rainCount * 3);
+    for (let i = 0; i < this.rainCount; i++) {
+      this.rainPositions[i * 3] = (Math.random() - 0.5) * 40;
+      this.rainPositions[i * 3 + 1] = Math.random() * 20;
+      this.rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 40;
+    }
+    this.rainGeo.setAttribute('position', new THREE.BufferAttribute(this.rainPositions, 3));
+    this.rainMat = new THREE.PointsMaterial({
+      color: 0x99bbdd,
+      size: 0.12,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false
+    });
+    this.rainMesh = new THREE.Points(this.rainGeo, this.rainMat);
+    this.rainMesh.visible = false;
+    this.scene.add(this.rainMesh);
+    this.rainEnabled = false;
   }
 
   addShake(amount) {
@@ -157,7 +179,33 @@ export class Effects {
     }
   }
 
-  update(dt) {
+  setRainEnabled(enabled) {
+    this.rainEnabled = !!enabled;
+    if (this.rainMesh) {
+      this.rainMesh.visible = this.rainEnabled;
+    }
+  }
+
+  update(dt, playerPos = null) {
+    // 1. Update Rain Particles if enabled
+    if (this.rainMesh && this.rainEnabled && playerPos) {
+      const posAttr = this.rainGeo.attributes.position;
+      const array = posAttr.array;
+      for (let i = 0; i < this.rainCount; i++) {
+        array[i * 3 + 1] -= 28 * dt; // fall speed
+        if (array[i * 3 + 1] < 0) {
+          array[i * 3] = playerPos.x + (Math.random() - 0.5) * 40;
+          array[i * 3 + 1] = 20 + Math.random() * 2;
+          array[i * 3 + 2] = playerPos.z + (Math.random() - 0.5) * 40;
+        }
+      }
+      posAttr.needsUpdate = true;
+      this.rainMesh.visible = true;
+    } else if (this.rainMesh && this.rainMesh.visible) {
+      this.rainMesh.visible = false;
+    }
+
+    // 2. Update active blood and spark particles
     for (let i = this.activeParticles.length - 1; i >= 0; i--) {
       const p = this.activeParticles[i];
       p.life -= dt;
@@ -170,6 +218,32 @@ export class Effects {
         this.particlePool.push(p);
       }
     }
+  }
+
+  showDamageArc(angleRad) {
+    const arc = document.getElementById('damage-direction-arc');
+    if (!arc) return;
+    arc.style.transform = `translate(-50%, -50%) rotate(${angleRad}rad)`;
+    arc.style.opacity = '0.8';
+    setTimeout(() => {
+      arc.style.opacity = '0';
+    }, 300);
+  }
+
+  showToast(msg) {
+    let toast = document.getElementById('toast-notification');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'toast-notification';
+      toast.className = 'hud-toast';
+      document.body.appendChild(toast);
+    }
+    toast.innerText = msg;
+    toast.style.opacity = '1';
+    clearTimeout(this._toastTimeout);
+    this._toastTimeout = setTimeout(() => {
+      toast.style.opacity = '0';
+    }, 2800);
   }
 
   flashDamage() {
