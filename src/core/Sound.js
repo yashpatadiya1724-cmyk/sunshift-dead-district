@@ -61,6 +61,10 @@ export class Sound {
     osc.stop(t + 0.045);
   }
 
+  playClick() {
+    this.uiClick();
+  }
+
   // Footstep Sound (Low thump on walk cycle)
   playFootstep() {
     this.ensureContext();

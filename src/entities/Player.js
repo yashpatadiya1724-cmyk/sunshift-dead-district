@@ -198,6 +198,8 @@ export class Player {
 
     const bar = document.getElementById('health-bar');
     if (bar) bar.style.width = `${(this.health / this.maxHealth) * 100}%`;
+
+    events.emit('playerHealed', { health: this.health, maxHealth: this.maxHealth });
   }
 
   refillAmmo(type, amount) {

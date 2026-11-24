@@ -78,11 +78,34 @@ export class Menu {
     const bindClick = (id, handler) => {
       const btn = document.getElementById(id);
       if (btn) {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (this.game.sound) this.game.sound.playClick();
-          handler();
-        });
+        const trigger = (e) => {
+          if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          console.log(`[MENU] Clicked button #${id}`);
+          try {
+            if (this.game && this.game.sound) {
+              if (typeof this.game.sound.playClick === 'function') {
+                this.game.sound.playClick();
+              } else if (typeof this.game.sound.uiClick === 'function') {
+                this.game.sound.uiClick();
+              }
+            }
+          } catch (soundErr) {
+            console.warn('[MENU] Audio click notice:', soundErr);
+          }
+
+          try {
+            handler();
+          } catch (handlerErr) {
+            console.error(`[MENU] Error executing handler for #${id}:`, handlerErr);
+          }
+        };
+
+        btn.addEventListener('click', trigger);
+      } else {
+        console.warn(`[MENU] Button element #${id} not found in DOM`);
       }
     };
 
@@ -166,7 +189,12 @@ export class Menu {
     this.qualityBtns.forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (this.game.sound) this.game.sound.playClick();
+        try {
+          if (this.game && this.game.sound) {
+            if (typeof this.game.sound.playClick === 'function') this.game.sound.playClick();
+            else if (typeof this.game.sound.uiClick === 'function') this.game.sound.uiClick();
+          }
+        } catch {}
         const q = btn.dataset.quality;
         this.qualityBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');

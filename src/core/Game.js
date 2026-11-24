@@ -122,7 +122,10 @@ export class Game {
       vignettePass.uniforms['offset'].value = 1.05;
       vignettePass.uniforms['darkness'].value = 1.25;
       this.composer.addPass(vignettePass);
-      this.composer.addPass(new OutputPass());
+
+      const outputPass = new OutputPass();
+      outputPass.renderToScreen = true;
+      this.composer.addPass(outputPass);
     } catch (e) {
       console.warn('EffectComposer initialization failed, falling back to WebGLRenderer:', e);
       this.composer = null;

@@ -15,8 +15,22 @@ body, html {
 }
 
 #game-container {
-  width: 100%;
-  height: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  z-index: 0;
+  overflow: hidden;
+}
+
+#game-container canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
   display: block;
 }
 
@@ -487,7 +501,8 @@ body, html {
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 100;
+  z-index: 1000;
+  pointer-events: auto !important;
 }
 
 .menu-card {
@@ -504,6 +519,9 @@ body, html {
   min-width: 360px;
   max-width: 520px;
   animation: fadeIn 0.25s ease-out;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 1001;
 }
 
 @keyframes fadeIn {
@@ -542,18 +560,22 @@ body, html {
 }
 
 .cyber-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   color: #eee;
   padding: 12px 20px;
   font-size: 14px;
   font-weight: bold;
   letter-spacing: 2px;
   border-radius: 6px;
-  cursor: pointer;
+  cursor: pointer !important;
   transition: all 0.15s ease;
   width: 100%;
   text-align: center;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 1002;
+  user-select: none;
 }
 
 .cyber-btn:hover {
