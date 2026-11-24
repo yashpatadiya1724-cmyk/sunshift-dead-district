@@ -16,16 +16,6 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☀️</text></svg>" />
   
   <link rel="stylesheet" href="./src/ui/style.css" />
-
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-        "three/examples/jsm/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-      }
-    }
-  </script>
 </head>
 <body>
   <!-- WebGL Incompatible Fallback -->
@@ -296,70 +286,6 @@
     </div>
 
   </div>
-
-  <!-- Direct Guaranteed Menu Interactivity Handler -->
-  <script>
-    (function() {
-      function showModal(panelId) {
-        var panels = ['loading-screen', 'main-menu', 'controls-panel', 'settings-panel', 'pause-menu', 'credits-panel', 'gameover-panel'];
-        panels.forEach(function(id) {
-          var el = document.getElementById(id);
-          if (el) {
-            if (id === panelId) {
-              el.style.display = 'flex';
-              el.classList.remove('hidden-panel');
-            } else {
-              el.style.display = 'none';
-              el.classList.add('hidden-panel');
-            }
-          }
-        });
-      }
-
-      function attach(id, fn) {
-        var el = document.getElementById(id);
-        if (el) {
-          el.addEventListener('click', function(e) {
-            e.stopPropagation();
-            fn(e);
-          });
-        }
-      }
-
-      // Direct button navigation
-      attach('btn-controls', function() { showModal('controls-panel'); });
-      attach('btn-settings', function() { showModal('settings-panel'); });
-      attach('btn-credits', function() { showModal('credits-panel'); });
-      attach('btn-controls-back', function() { showModal('main-menu'); });
-      attach('btn-settings-back', function() { showModal('main-menu'); });
-      attach('btn-credits-back', function() { showModal('main-menu'); });
-
-      attach('btn-play', function() {
-        var container = document.getElementById('menu-container');
-        if (container) container.style.display = 'none';
-        if (window.__SUNSHIFT_GAME__ && typeof window.__SUNSHIFT_GAME__.start === 'function') {
-          window.__SUNSHIFT_GAME__.start();
-        }
-      });
-      attach('btn-resume', function() {
-        if (window.__SUNSHIFT_GAME__ && typeof window.__SUNSHIFT_GAME__.resume === 'function') {
-          window.__SUNSHIFT_GAME__.resume();
-        }
-      });
-      attach('btn-restart', function() {
-        if (window.__SUNSHIFT_GAME__ && typeof window.__SUNSHIFT_GAME__.restart === 'function') {
-          window.__SUNSHIFT_GAME__.restart();
-        }
-      });
-      attach('btn-pause-menu', function() { showModal('main-menu'); });
-      attach('btn-play-again', function() {
-        if (window.__SUNSHIFT_GAME__ && typeof window.__SUNSHIFT_GAME__.restart === 'function') {
-          window.__SUNSHIFT_GAME__.restart();
-        }
-      });
-      attach('btn-over-menu', function() { showModal('main-menu'); });
-    })();
-  </script>
 
   <script type="module" src="./src/main.js"></script>
 </body>

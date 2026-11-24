@@ -4,7 +4,6 @@ import { Menu } from './ui/Menu.js';
 import { HUD } from './ui/HUD.js';
 
 function init() {
-  console.log('[MAIN] Initializing SUNSHIFT engine...');
   let game = null;
 
   try {
@@ -21,8 +20,6 @@ function init() {
     // 3. Initialize HUD and Menu UI layers
     new HUD(game);
     new Menu(game);
-
-    console.log('[MAIN] Engine, HUD, and Menu initialized successfully!');
   } catch (err) {
     console.error('[MAIN] Engine initialization error:', err);
     try {

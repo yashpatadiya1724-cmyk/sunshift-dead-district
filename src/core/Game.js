@@ -122,10 +122,7 @@ export class Game {
       vignettePass.uniforms['offset'].value = 1.05;
       vignettePass.uniforms['darkness'].value = 1.25;
       this.composer.addPass(vignettePass);
-
-      const outputPass = new OutputPass();
-      outputPass.renderToScreen = true;
-      this.composer.addPass(outputPass);
+      this.composer.addPass(new OutputPass());
     } catch (e) {
       console.warn('EffectComposer initialization failed, falling back to WebGLRenderer:', e);
       this.composer = null;
@@ -164,8 +161,13 @@ export class Game {
       }
     });
 
-    // F3 -> Toggle FPS Counter / Space -> Advance tutorial
+    // F3 -> Toggle FPS Counter / Space -> Advance tutorial / T -> Dev Shift
     window.addEventListener('keydown', (e) => {
+      if (import.meta.env.DEV && e.code === 'KeyT') {
+        if (this.shift && this.state === GAME_STATES.PLAYING) {
+          this.shift.triggerShift();
+        }
+      }
       if (e.code === 'F3') {
         this.showFps = !this.showFps;
         if (this.fpsCounterEl) {
@@ -377,15 +379,20 @@ export class Game {
 
   fadeExtraNightZombies() {
     this.extraNightZombies.forEach(z => z.startDawnFade());
-    setTimeout(() => {
-      this.extraNightZombies = [];
-      this.zombies = this.zombies.filter(z => !z.isDead && !z.isFading);
-    }, 1500);
   }
 
   clearExtraNightZombies() {
     this.extraNightZombies.forEach(z => z.destroy());
     this.extraNightZombies = [];
+  }
+
+  requestPointerLockSafe() {
+    try {
+      const p = document.body.requestPointerLock();
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {});
+      }
+    } catch {}
   }
 
   start() {
@@ -396,12 +403,7 @@ export class Game {
     this.stats.relaysCollected = 0;
     this.stats.shiftsSurvived = 0;
     this.input.reset();
-    try {
-      const lockPromise = document.body.requestPointerLock();
-      if (lockPromise && typeof lockPromise.catch === 'function') {
-        lockPromise.catch(() => {});
-      }
-    } catch (e) {}
+    this.requestPointerLockSafe();
     events.emit('stateChange', this.state);
 
     this.checkFirstTimeTutorial();
@@ -453,7 +455,7 @@ export class Game {
     if (this.state !== GAME_STATES.PAUSED) return;
     this.state = GAME_STATES.PLAYING;
     this.input.reset();
-    document.body.requestPointerLock();
+    this.requestPointerLockSafe();
     events.emit('stateChange', this.state);
   }
 
@@ -478,7 +480,7 @@ export class Game {
 
     this.state = GAME_STATES.PLAYING;
     this.input.reset();
-    document.body.requestPointerLock();
+    this.requestPointerLockSafe();
     events.emit('stateChange', this.state);
   }
 
@@ -544,7 +546,11 @@ export class Game {
   }
 
   renderPass() {
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   loop() {
@@ -607,8 +613,17 @@ export class Game {
       this.relays.update(dt, this.vehicle.isOccupied ? { mesh: { position: this.vehicle.mesh.position } } : this.player);
       this.city.updateStreetlights(activeEntityPos);
 
-      for (let i = 0; i < this.zombies.length; i++) {
-        this.zombies[i].update(dt, this.player, this.shift.isNight, this.city.colliders);
+      for (let i = this.zombies.length - 1; i >= 0; i--) {
+        const z = this.zombies[i];
+        if (z.isRemoved) {
+          this.zombies.splice(i, 1);
+          const extraIdx = this.extraNightZombies.indexOf(z);
+          if (extraIdx !== -1) {
+            this.extraNightZombies.splice(extraIdx, 1);
+          }
+          continue;
+        }
+        z.update(dt, this.player, this.shift.isNight, this.city.colliders);
       }
 
       if (this.player.health <= 0) {

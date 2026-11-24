@@ -83,7 +83,15 @@ export const CONFIG = {
     }
   },
 
-  // Enemies
+  // Enemies & Zombie Mechanics
+  zombie: {
+    count: 20,
+    attackDistance: 1.35,
+    attackCooldown: 1.0,
+    soundHearingRadius: 18.0,
+    agroRangeDay: 16.0,
+    agroRangeNight: 32.0
+  },
   enemies: {
     normal: { type: 'NORMAL', health: 70, daySpeed: 1.8, nightSpeed: 4.5, damage: 12, scale: 1.0, color: 0x3d5236, headColor: 0x5a7d4a, weight: 0.60 },
     runner: { type: 'RUNNER', health: 40, daySpeed: 3.2, nightSpeed: 6.2, damage: 8, scale: 0.82, color: 0x4a5d30, headColor: 0x73914a, weight: 0.25 },
