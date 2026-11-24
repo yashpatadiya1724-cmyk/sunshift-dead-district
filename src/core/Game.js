@@ -708,9 +708,6 @@ export class Game {
     events.emit('stateChange', this.state);
   }
 
-    events.emit('stateChange', this.state);
-  }
-
   win(endingData = null) {
     this.state = GAME_STATES.WIN;
     this.stats.survivalTime = ((performance.now() - this.stats.startTime) / 1000).toFixed(1);
@@ -893,7 +890,7 @@ export class Game {
           this.vehicle.mesh.position.z
         );
       } else {
-        this.player.update(dt, this.city.colliders, this.zombies, this.city.meshes);
+        this.player.update(dt, this.city.colliders, this.zombies, this.city.rayTargets);
       }
 
       this.dirLight.position.set(

@@ -135,6 +135,23 @@ export class Effects {
     }, 150);
   }
 
+  showDamageArc(playerPos, playerYaw, sourcePos) {
+    const el = document.getElementById('damage-direction-arc');
+    if (!el || !playerPos || !sourcePos) return;
+
+    const dx = sourcePos.x - playerPos.x;
+    const dz = sourcePos.z - playerPos.z;
+    const hitAngle = Math.atan2(dx, dz);
+    const relAngle = hitAngle - playerYaw;
+
+    el.style.transform = `translate(-50%, -50%) rotate(${relAngle}rad)`;
+    el.style.opacity = '0.7';
+
+    setTimeout(() => {
+      el.style.opacity = '0';
+    }, 300);
+  }
+
   // Countdown warning pulse: 0.18 opacity for 200ms (red if night incoming, white if day incoming)
   pulseWarning(isNextNight = true) {
     const flashEl = document.getElementById('shift-flash');
