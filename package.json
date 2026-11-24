@@ -10,7 +10,7 @@
     "test": "node test/game_engine_test.js"
   },
   "dependencies": {
-    "three": "^0.160.0"
+    "three": "^0.187.0"
   },
   "devDependencies": {
     "vite": "^5.0.0"
