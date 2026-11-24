@@ -791,3 +791,190 @@ body, html {
   box-shadow: 0 0 10px #ffaa00;
   border-radius: 4px;
 }
+
+/* Cinematic Prologue Intro Overlay */
+#intro-overlay {
+  position: fixed;
+  inset: 0;
+  background: #040508;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2500;
+  opacity: 1;
+  transition: opacity 0.8s ease;
+}
+#intro-card {
+  max-width: 680px;
+  width: 90vw;
+  text-align: center;
+  padding: 30px;
+}
+#intro-title {
+  font-size: 26px;
+  letter-spacing: 6px;
+  color: #ffaa00;
+  font-weight: 800;
+  text-shadow: 0 0 16px rgba(255, 170, 0, 0.6);
+  margin-bottom: 20px;
+}
+#intro-text {
+  font-size: 18px;
+  line-height: 1.6;
+  color: #e2e8f0;
+  font-family: 'Courier New', monospace;
+  margin: 20px 0 30px 0;
+  min-height: 60px;
+}
+#intro-skip {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: rgba(255, 255, 255, 0.35);
+  animation: pulse 1.8s infinite;
+}
+
+/* Story Dialogue Box */
+#dialogue-box {
+  position: fixed;
+  bottom: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, 92vw);
+  background: rgba(8, 12, 18, 0.94);
+  border: 1px solid #00e5ff;
+  border-radius: 6px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  z-index: 1200;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.2);
+}
+#dialogue-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid #00e5ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 20px;
+  flex-shrink: 0;
+  background: rgba(0, 229, 255, 0.15);
+  color: #00e5ff;
+}
+#dialogue-content {
+  flex: 1;
+  text-align: left;
+}
+#dialogue-speaker {
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  font-weight: 800;
+  margin-bottom: 4px;
+  color: #00e5ff;
+}
+#dialogue-text {
+  font-size: 14.5px;
+  line-height: 1.4;
+  color: #ffffff;
+  font-family: monospace;
+  min-height: 38px;
+}
+
+/* Ending Choice Prompt (Mission 7) */
+#ending-choice-prompt {
+  position: fixed;
+  top: 25%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(680px, 92vw);
+  background: rgba(10, 14, 22, 0.96);
+  border: 2px solid #00e5ff;
+  border-radius: 8px;
+  padding: 24px;
+  z-index: 1800;
+  text-align: center;
+  box-shadow: 0 0 35px rgba(0, 229, 255, 0.45);
+}
+.choice-title {
+  font-size: 15px;
+  letter-spacing: 3px;
+  color: #00e5ff;
+  margin-bottom: 20px;
+  font-weight: 800;
+}
+.choice-row {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+.choice-card {
+  flex: 1;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+}
+.choice-key {
+  font-size: 24px;
+  font-weight: 900;
+  color: #ffaa00;
+  margin-bottom: 6px;
+}
+.choice-action {
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 1.5px;
+  margin-bottom: 6px;
+}
+.choice-desc {
+  font-size: 12px;
+  color: #a0aab5;
+  line-height: 1.4;
+}
+
+/* Tower Charge Bar */
+#tower-charge-wrap {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 340px;
+  background: rgba(12, 16, 24, 0.88);
+  border: 1px solid #00e5ff;
+  border-radius: 4px;
+  padding: 6px 12px;
+  z-index: 100;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
+}
+#tower-charge-bar {
+  width: 0%;
+  height: 100%;
+  background: #00e5ff;
+  box-shadow: 0 0 8px #00e5ff;
+  border-radius: 3px;
+  transition: width 0.1s linear;
+}
+
+/* Noise Meter Bar */
+.noise-box #noise-bar {
+  width: 0%;
+  height: 100%;
+  background: #ff3344;
+  box-shadow: 0 0 8px #ff3344;
+  border-radius: 3px;
+  transition: width 0.08s ease;
+}
+
+.gameover-mission-txt {
+  color: #ffaa00;
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  margin: 4px 0 12px 0;
+  font-weight: bold;
+}
+

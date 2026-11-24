@@ -45,10 +45,39 @@
   <div id="fps-counter" style="display: none;">FPS: 60</div>
 
   <!-- First-Time Tutorial Pop-up Hint -->
-  <div id="tutorial-box" style="display: none;">
-    <div id="tutorial-step-tag">TUTORIAL (1/5)</div>
-    <div id="tutorial-msg">Use [W, A, S, D] to move and hold [SHIFT] to sprint.</div>
-    <div class="tutorial-sub">[SPACE] to continue</div>
+  <!-- Cinematic Prologue Intro Overlay -->
+  <div id="intro-overlay" style="display: none;">
+    <div id="intro-card">
+      <div id="intro-title">HAVEN CITY</div>
+      <div id="intro-text"></div>
+      <div id="intro-skip">[CLICK OR PRESS ANY KEY TO SKIP]</div>
+    </div>
+  </div>
+
+  <!-- Story Dialogue Transmission Box -->
+  <div id="dialogue-box" style="display: none;">
+    <div id="dialogue-avatar">M</div>
+    <div id="dialogue-content">
+      <div id="dialogue-speaker">MARA QUINN // EVAC TOWER</div>
+      <div id="dialogue-text">...</div>
+    </div>
+  </div>
+
+  <!-- Ending Choice Prompt (Mission 7) -->
+  <div id="ending-choice-prompt" style="display: none;">
+    <div class="choice-title">UPLINK STABILIZED — CHOOSE YOUR FATE</div>
+    <div class="choice-row">
+      <div class="choice-card choice-evac">
+        <div class="choice-key">[E]</div>
+        <div class="choice-action">EVACUATE</div>
+        <div class="choice-desc">Extract via helicopter. Leave the burning district behind.</div>
+      </div>
+      <div class="choice-card choice-shutdown">
+        <div class="choice-key">[G]</div>
+        <div class="choice-action">SHUT DOWN ARRAY</div>
+        <div class="choice-desc">Destroy the Helios grid. End the Shift forever.</div>
+      </div>
+    </div>
   </div>
 
   <!-- In-Game HUD (Visible only during PLAYING state) -->
@@ -97,7 +126,16 @@
         <span id="shift-name">DAY SHIFT (CALM)</span>
         <div id="shift-timer-bar"><div id="shift-progress"></div></div>
       </div>
-      <div id="mission-text">MISSION: COLLECT RELAYS (0/4)</div>
+      <div id="mission-text">MISSION: FIRST LIGHT — REACH THE MUSCLE CAR</div>
+    </div>
+
+    <!-- Tower Uplink Charge Bar (Mission 6) -->
+    <div id="tower-charge-wrap" style="display: none;">
+      <div class="hud-label-row">
+        <span class="hud-label">UPLINK CAPACITOR</span>
+        <span id="tower-charge-text" class="hud-sublabel">0%</span>
+      </div>
+      <div class="bar-container"><div id="tower-charge-bar"></div></div>
     </div>
 
     <!-- Top Right Stats -->
@@ -137,6 +175,15 @@
         <div class="hud-label">UV FLARE [Q]</div>
         <div id="flare-status-txt">READY</div>
         <div class="flare-bar-wrap"><div id="flare-cd-bar"></div></div>
+      </div>
+
+      <!-- Noise Meter -->
+      <div class="hud-box noise-box">
+        <div class="hud-label-row">
+          <span class="hud-label">NOISE</span>
+          <span id="noise-text" class="hud-sublabel">0%</span>
+        </div>
+        <div class="bar-container"><div id="noise-bar"></div></div>
       </div>
     </div>
 
@@ -261,18 +308,19 @@
     <div id="gameover-panel" class="menu-card" style="display: none;">
       <h1 id="gameover-title" class="title-win">YOU SURVIVED</h1>
       <p id="gameover-subtitle">District evacuated successfully.</p>
+      <p id="gameover-mission" class="gameover-mission-txt"></p>
       <div class="stats-grid">
         <div class="stat-box">
-          <div class="stat-num" id="stat-time">00:00</div>
-          <div class="stat-lbl">Time Survived</div>
+          <div class="stat-num" id="stat-missions">0 / 6</div>
+          <div class="stat-lbl">Missions Done</div>
         </div>
         <div class="stat-box">
           <div class="stat-num" id="stat-kills">0</div>
           <div class="stat-lbl">Zombies Purged</div>
         </div>
         <div class="stat-box">
-          <div class="stat-num" id="stat-relays">0 / 4</div>
-          <div class="stat-lbl">Relays Secured</div>
+          <div class="stat-num" id="stat-time">00:00</div>
+          <div class="stat-lbl">Time Survived</div>
         </div>
         <div class="stat-box">
           <div class="stat-num" id="stat-shifts">0</div>
@@ -280,7 +328,8 @@
         </div>
       </div>
       <div class="menu-btn-stack">
-        <button id="btn-play-again" class="cyber-btn primary">PLAY AGAIN</button>
+        <button id="btn-checkpoint-retry" class="cyber-btn primary">RETRY FROM CHECKPOINT</button>
+        <button id="btn-play-again" class="cyber-btn">RESTART RUN</button>
         <button id="btn-over-menu" class="cyber-btn danger">MAIN MENU</button>
       </div>
     </div>

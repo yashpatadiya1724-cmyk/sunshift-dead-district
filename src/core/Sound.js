@@ -587,4 +587,80 @@ export class Sound {
       osc.stop(start + 0.35);
     });
   }
+
+  playerHit() {
+    this.playerHurt();
+  }
+
+  playerDeath() {
+    this.gameOver();
+  }
+
+  zombieAttack() {
+    this.ensureContext();
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.exponentialRampToValueAtTime(70, t + 0.18);
+    gain.gain.setValueAtTime(0.3, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.2);
+  }
+
+  radioBlip() {
+    this.ensureContext();
+    const t = this.ctx.currentTime;
+
+    // Beep 1
+    const osc1 = this.ctx.createOscillator();
+    const gain1 = this.ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(1760, t);
+    gain1.gain.setValueAtTime(0.18, t);
+    gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    osc1.connect(gain1);
+    gain1.connect(this.masterGain);
+    osc1.start(t);
+    osc1.stop(t + 0.045);
+
+    // Beep 2
+    const osc2 = this.ctx.createOscillator();
+    const gain2 = this.ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(2349.32, t + 0.05);
+    gain2.gain.setValueAtTime(0.18, t + 0.05);
+    gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    osc2.connect(gain2);
+    gain2.connect(this.masterGain);
+    osc2.start(t + 0.05);
+    osc2.stop(t + 0.095);
+
+    // Static burst
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.08);
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * 0.15;
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(2500, t + 0.08);
+    filter.Q.setValueAtTime(1.5, t + 0.08);
+
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.2, t + 0.08);
+    noiseGain.gain.exponentialRampToValueAtTime(0.005, t + 0.16);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGain);
+    noise.start(t + 0.08);
+  }
 }

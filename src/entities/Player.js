@@ -35,6 +35,7 @@ export class Player {
       { ...CONFIG.weapons.shotgun, magAmmo: CONFIG.weapons.shotgun.magSize },
       { ...CONFIG.weapons.rifle, magAmmo: CONFIG.weapons.rifle.magSize }
     ];
+    this.unlockedWeapons = { pistol: true, shotgun: false, rifle: false };
     this.currentWeaponIndex = 0;
     this.isReloading = false;
     this.reloadTimer = 0;
@@ -140,11 +141,29 @@ export class Player {
     });
   }
 
+  unlockWeapon(name) {
+    const key = name.toLowerCase();
+    if (this.unlockedWeapons[key] !== undefined) {
+      this.unlockedWeapons[key] = true;
+    }
+  }
+
   getCurrentWeapon() {
     return this.weaponList[this.currentWeaponIndex];
   }
 
   switchWeapon(index) {
+    if (typeof index === 'string') {
+      const map = { pistol: 0, shotgun: 1, rifle: 2 };
+      index = map[index.toLowerCase()] ?? 0;
+    }
+    const key = (index === 0) ? 'pistol' : (index === 1) ? 'shotgun' : 'rifle';
+    if (!this.unlockedWeapons[key]) {
+      if (this.effects) {
+        this.effects.showBanner(`${key.toUpperCase()} LOCKED`, '#ff4444');
+      }
+      return;
+    }
     if (index === this.currentWeaponIndex || this.isReloading) return;
     this.currentWeaponIndex = index;
     this.shootTimer = 0.15;
@@ -424,9 +443,8 @@ export class Player {
   }
 
   shoot(zombies, cityMeshes = []) {
-    events.emit('playerShot');
-
     const w = this.getCurrentWeapon();
+    events.emit('playerShot', { weapon: w.name });
 
     // Trigger weapon-specific audio
     if (this.sound) {

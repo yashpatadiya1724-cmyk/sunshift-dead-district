@@ -236,8 +236,10 @@ export class HUD {
       }
 
       // 5. Objective Tracker & Direction Arrow
-      if (playerPos && this.game.relays) {
-        const obj = this.game.relays.getObjective(playerPos);
+      if (playerPos) {
+        const obj = (this.game.missionManager && typeof this.game.missionManager.getObjective === 'function')
+          ? this.game.missionManager.getObjective(playerPos)
+          : (this.game.relays && this.game.relays.getObjective ? this.game.relays.getObjective(playerPos) : null);
         if (obj) {
           if (this.objectiveTracker) this.objectiveTracker.style.display = 'flex';
           if (this.objLabel) this.objLabel.textContent = obj.label || 'OBJECTIVE';
@@ -359,22 +361,22 @@ export class HUD {
     }
 
     // 2. Draw Extraction Tower (Green dot)
-    if (this.game.relays?.tower) {
-      const t = this.game.relays.tower;
-      const tx = ((t.position?.x ?? t.x ?? 0) - px) * scale;
-      const tz = ((t.position?.z ?? t.z ?? 0) - pz) * scale;
+    if (this.game.relays?.towerGroup?.visible) {
+      const t = this.game.relays.towerGroup.position;
+      const tx = (t.x - px) * scale;
+      const tz = (t.z - pz) * scale;
       ctx.fillStyle = '#00ffaa';
       ctx.beginPath();
       ctx.arc(tx, tz, 4.5, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // 3. Draw Relays (Yellow dots)
-    const relayList = this.game.relays?.relays || this.game.relays?.relaysList || this.game.relays?.items || [];
+    // 3. Draw Relays (Yellow dots - only visible active mission relays)
+    const relayList = this.game.relays?.relays || [];
     ctx.fillStyle = '#ffdd00';
     for (let i = 0; i < relayList.length; i++) {
       const r = relayList[i];
-      if (!r.collected) {
+      if (!r.collected && (r.group?.visible ?? true)) {
         const rx = ((r.position?.x ?? r.x ?? 0) - px) * scale;
         const rz = ((r.position?.z ?? r.z ?? 0) - pz) * scale;
         ctx.beginPath();

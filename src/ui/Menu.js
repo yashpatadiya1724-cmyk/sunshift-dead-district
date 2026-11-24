@@ -140,6 +140,11 @@ export class Menu {
     bindClick('btn-pause-menu', () => this.game.showMenu());
 
     // Game Over Buttons
+    bindClick('btn-checkpoint-retry', () => {
+      if (this.game && typeof this.game.retryFromCheckpoint === 'function') {
+        this.game.retryFromCheckpoint();
+      }
+    });
     bindClick('btn-play-again', () => this.game.restart());
     bindClick('btn-over-menu', () => this.game.showMenu());
   }
@@ -269,14 +274,66 @@ export class Menu {
 
   populateGameOver(state, stats = {}) {
     const isWin = state === 'WIN';
-    if (this.gameoverTitle) {
-      this.gameoverTitle.textContent = isWin ? 'VICTORY: DISTRICT PURGED' : 'SIGNAL LOST: YOU DIED';
-      this.gameoverTitle.className = isWin ? 'title-win' : 'title-lose';
-    }
-    if (this.gameoverSubtitle) {
-      this.gameoverSubtitle.textContent = isWin
-        ? 'Relay grid online. Evacuation aircraft contacted.'
-        : 'The infected overwhelmed your position.';
+    const ending = this.game.missionManager?.chosenEnding;
+    const currentMission = this.game.missionManager?.getCurrentMission();
+    const missionIdx = this.game.missionManager?.currentMissionIndex || 0;
+
+    const missionTxtEl = document.getElementById('gameover-mission');
+    const missionsDoneEl = document.getElementById('stat-missions');
+    const btnRetry = document.getElementById('btn-checkpoint-retry');
+    const btnPlayAgain = document.getElementById('btn-play-again');
+
+    if (isWin) {
+      if (ending === 'A') {
+        if (this.gameoverTitle) {
+          this.gameoverTitle.textContent = 'SURVIVOR — EVACUATION SUCCESSFUL';
+          this.gameoverTitle.className = 'title-win';
+        }
+        if (this.gameoverSubtitle) {
+          this.gameoverSubtitle.textContent = 'The helicopter lifts off. Haven City burns below, but you are alive. Some nights you still hear the Shift.';
+        }
+        if (missionTxtEl) {
+          missionTxtEl.textContent = 'ENDING A: THE ESCAPE';
+        }
+      } else {
+        if (this.gameoverTitle) {
+          this.gameoverTitle.textContent = 'REDEEMER — THE SHIFT ENDS';
+          this.gameoverTitle.className = 'title-win';
+        }
+        if (this.gameoverSubtitle) {
+          this.gameoverSubtitle.textContent = 'The Array dies. The sky stops flipping. Dawn finally stays. You stay too, to rebuild what you broke.';
+        }
+        if (missionTxtEl) {
+          missionTxtEl.textContent = 'ENDING B: DAWN RESTORED';
+        }
+      }
+
+      if (missionsDoneEl) missionsDoneEl.textContent = '6 / 6';
+      if (btnRetry) btnRetry.style.display = 'none';
+      if (btnPlayAgain) btnPlayAgain.textContent = 'PLAY AGAIN';
+    } else {
+      if (this.gameoverTitle) {
+        this.gameoverTitle.textContent = 'SIGNAL LOST — YOU DIED';
+        this.gameoverTitle.className = 'title-lose';
+      }
+      if (this.gameoverSubtitle) {
+        this.gameoverSubtitle.textContent = currentMission
+          ? `Failed during Mission ${currentMission.id}: ${currentMission.title}`
+          : 'The infected overwhelmed your position.';
+      }
+      if (missionTxtEl) {
+        missionTxtEl.textContent = currentMission ? `OBJECTIVE: ${currentMission.objective}` : '';
+      }
+      if (missionsDoneEl) {
+        missionsDoneEl.textContent = `${Math.min(6, missionIdx)} / 6`;
+      }
+      if (btnRetry) {
+        btnRetry.style.display = 'inline-block';
+        btnRetry.textContent = `RETRY FROM MISSION ${currentMission ? currentMission.id : 1}`;
+      }
+      if (btnPlayAgain) {
+        btnPlayAgain.textContent = 'RESTART CAMPAIGN';
+      }
     }
 
     const totalSeconds = Math.floor(stats.survivalTime || stats.timeSurvived || 0);

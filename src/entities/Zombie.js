@@ -197,7 +197,9 @@ export class Zombie {
       }
     }
 
-    const agroRange = isNight ? CONFIG.zombie.agroRangeNight : CONFIG.zombie.agroRangeDay;
+    const baseAgro = isNight ? CONFIG.zombie.agroRangeNight : CONFIG.zombie.agroRangeDay;
+    const noise = (player && player.noise !== undefined) ? player.noise : (window.__SUNSHIFT_GAME__?.noise || 0);
+    const agroRange = baseAgro * (1.0 + noise);
 
     if (horizontalDist < agroRange && horizontalDist > this.attackDistance) {
       let dirX = dx / horizontalDist;
@@ -253,6 +255,9 @@ export class Zombie {
       if (this.attackTimer <= 0) {
         player.takeDamage(this.damage, this.mesh.position);
         this.attackTimer = this.attackCooldown;
+        if (this.sound && typeof this.sound.zombieAttack === 'function') {
+          this.sound.zombieAttack();
+        }
       }
     }
   }

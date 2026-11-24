@@ -19,10 +19,13 @@ import { PickupsManager } from '../world/Pickups.js';
 import { City } from '../world/City.js';
 import { ShiftSystem } from '../world/ShiftSystem.js';
 import { RelayManager } from '../world/Relays.js';
+import { Dialogue } from '../story/Dialogue.js';
+import { MissionManager } from '../story/MissionManager.js';
 
 export const GAME_STATES = {
   LOADING: 'LOADING',
   MENU: 'MENU',
+  INTRO: 'INTRO',
   PLAYING: 'PLAYING',
   PAUSED: 'PAUSED',
   WIN: 'WIN',
@@ -144,6 +147,10 @@ export class Game {
     this.vehicle = new Vehicle(this.scene, this.sound, this.effects);
     this.pickups = new PickupsManager(this.scene, this.sound);
     this.relays = new RelayManager(this.scene, this.sound);
+
+    this.dialogue = new Dialogue(this.sound);
+    this.missionManager = new MissionManager(this);
+    this.noise = 0.0;
 
     this.zombies = [];
     this.extraNightZombies = [];
@@ -307,12 +314,20 @@ export class Game {
       }
     });
 
+    events.on('playerShot', (data) => {
+      const w = data?.weapon?.toUpperCase() || '';
+      if (w.includes('PISTOL')) this.noise = Math.min(1.0, this.noise + 0.25);
+      else if (w.includes('SHOTGUN')) this.noise = Math.min(1.0, this.noise + 0.60);
+      else if (w.includes('RIFLE')) this.noise = Math.min(1.0, this.noise + 0.40);
+      else this.noise = Math.min(1.0, this.noise + 0.25);
+    });
+
     events.on('relayCollected', () => {
       this.stats.relaysCollected++;
     });
 
-    events.on('gameWon', () => {
-      this.win();
+    events.on('gameWon', (endingData) => {
+      this.win(endingData);
     });
 
     events.on('gameLost', () => {
@@ -348,6 +363,13 @@ export class Game {
         this.zombies.push(new Zombie(this.scene, pos, this.sound));
       }
     }
+  }
+
+  spawnCustomZombie(pos, type = 'NORMAL') {
+    const archetype = CONFIG.enemies[type.toLowerCase()] || CONFIG.enemies.normal;
+    const z = new Zombie(this.scene, pos, this.sound, archetype, false);
+    this.zombies.push(z);
+    return z;
   }
 
   spawnExtraNightZombies() {
@@ -395,52 +417,91 @@ export class Game {
     } catch {}
   }
 
+  playIntro(onComplete) {
+    const introOverlay = document.getElementById('intro-overlay');
+    const introText = document.getElementById('intro-text');
+    if (!introOverlay || !introText) {
+      if (onComplete) onComplete();
+      return;
+    }
+
+    this.state = GAME_STATES.INTRO;
+    introOverlay.style.display = 'flex';
+    introOverlay.style.opacity = '1';
+    introText.textContent = '';
+
+    const fullText = 'HAVEN CITY. The Shift began 3 days ago. Day is quiet. Night is not.';
+    let charIdx = 0;
+    let finished = false;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearInterval(typeTimer);
+      clearTimeout(autoTimer);
+      window.removeEventListener('keydown', skip);
+      introOverlay.removeEventListener('click', skip);
+
+      introOverlay.style.opacity = '0';
+      setTimeout(() => {
+        introOverlay.style.display = 'none';
+        if (onComplete) onComplete();
+      }, 700);
+    };
+
+    const skip = () => finish();
+    window.addEventListener('keydown', skip, { once: true });
+    introOverlay.addEventListener('click', skip, { once: true });
+
+    const typeTimer = setInterval(() => {
+      charIdx++;
+      introText.textContent = fullText.slice(0, charIdx);
+      if (charIdx >= fullText.length) {
+        clearInterval(typeTimer);
+      }
+    }, 45);
+
+    // 6 seconds total
+    const autoTimer = setTimeout(() => {
+      finish();
+    }, 6000);
+  }
+
   start() {
     if (this.sound) this.sound.startAmbient();
-    this.state = GAME_STATES.PLAYING;
     this.stats.startTime = performance.now();
     this.stats.zombiesKilled = 0;
     this.stats.relaysCollected = 0;
     this.stats.shiftsSurvived = 0;
+    this.noise = 0;
+    this.input.reset();
+
+    this.playIntro(() => {
+      this.state = GAME_STATES.PLAYING;
+      this.requestPointerLockSafe();
+      events.emit('stateChange', this.state);
+
+      if (this.missionManager) {
+        this.missionManager.start();
+      }
+    });
+  }
+
+  retryFromCheckpoint() {
+    this.clearExtraNightZombies();
+    this.noise = 0;
+
+    if (this.sound) this.sound.setLowHealthHeartbeat(false);
+    if (this.effects) this.effects.setLowHealthEffect(false);
+
+    if (this.missionManager) {
+      this.missionManager.retryFromCheckpoint();
+    }
+
+    this.state = GAME_STATES.PLAYING;
     this.input.reset();
     this.requestPointerLockSafe();
     events.emit('stateChange', this.state);
-
-    this.checkFirstTimeTutorial();
-  }
-
-  checkFirstTimeTutorial() {
-    try {
-      const seen = localStorage.getItem('sunshift_tutorial_seen');
-      if (!seen) {
-        this.isShowingTutorial = true;
-        this.tutorialIndex = 0;
-        this.renderTutorialStep();
-      }
-    } catch {}
-  }
-
-  renderTutorialStep() {
-    const box = document.getElementById('tutorial-box');
-    const tag = document.getElementById('tutorial-step-tag');
-    const msg = document.getElementById('tutorial-msg');
-    if (!box || !tag || !msg) return;
-
-    if (this.tutorialIndex < this.tutorialSteps.length) {
-      const step = this.tutorialSteps[this.tutorialIndex];
-      tag.innerText = step.tag;
-      msg.innerText = step.msg;
-      box.style.display = 'block';
-    } else {
-      box.style.display = 'none';
-      this.isShowingTutorial = false;
-      try { localStorage.setItem('sunshift_tutorial_seen', 'true'); } catch {}
-    }
-  }
-
-  advanceTutorial() {
-    this.tutorialIndex++;
-    this.renderTutorialStep();
   }
 
   pause() {
@@ -461,7 +522,10 @@ export class Game {
 
   restart() {
     this.clearExtraNightZombies();
+    if (this.dialogue) this.dialogue.clear();
+    this.noise = 0;
     this.player.reset();
+    this.player.unlockedWeapons = { pistol: true, shotgun: false, rifle: false };
     this.vehicle.reset();
     this.pickups.reset();
     this.relays.reset();
@@ -482,15 +546,22 @@ export class Game {
     this.input.reset();
     this.requestPointerLockSafe();
     events.emit('stateChange', this.state);
+
+    if (this.missionManager) {
+      this.missionManager.start();
+    }
   }
 
   showMenu() {
     this.state = GAME_STATES.MENU;
     if (document.exitPointerLock) document.exitPointerLock();
     this.input.reset();
+    if (this.dialogue) this.dialogue.clear();
+    this.noise = 0;
 
     this.clearExtraNightZombies();
     this.player.reset();
+    this.player.unlockedWeapons = { pistol: true, shotgun: false, rifle: false };
     this.vehicle.reset();
     this.pickups.reset();
     this.relays.reset();
@@ -504,7 +575,7 @@ export class Game {
     events.emit('stateChange', this.state);
   }
 
-  win() {
+  win(endingData = null) {
     this.state = GAME_STATES.WIN;
     this.stats.survivalTime = ((performance.now() - this.stats.startTime) / 1000).toFixed(1);
     if (document.exitPointerLock) document.exitPointerLock();
@@ -516,6 +587,30 @@ export class Game {
       this.sound.win();
     }
     if (this.effects) this.effects.setLowHealthEffect(false);
+
+    // Update Game Over panel for Ending A or B
+    const titleEl = document.getElementById('gameover-title');
+    const subEl = document.getElementById('gameover-subtitle');
+    const missionEl = document.getElementById('gameover-mission');
+    const missionsStatEl = document.getElementById('stat-missions');
+    const btnRetry = document.getElementById('btn-checkpoint-retry');
+    const btnPlayAgain = document.getElementById('btn-play-again');
+
+    if (titleEl) {
+      titleEl.className = 'title-win';
+      titleEl.textContent = endingData?.title || 'SURVIVOR — EVACUATION SUCCESSFUL';
+    }
+    if (subEl) {
+      subEl.textContent = endingData?.text || 'District evacuated successfully.';
+    }
+    if (missionEl) {
+      missionEl.textContent = endingData?.type === 'A' ? 'ENDING A: THE ESCAPE' : 'ENDING B: DAWN RESTORED';
+    }
+    if (missionsStatEl) {
+      missionsStatEl.textContent = '6 / 6';
+    }
+    if (btnRetry) btnRetry.style.display = 'none';
+    if (btnPlayAgain) btnPlayAgain.textContent = 'PLAY AGAIN';
 
     events.emit('stateChange', this.state);
   }
@@ -532,6 +627,37 @@ export class Game {
       this.sound.gameOver();
     }
     if (this.effects) this.effects.setLowHealthEffect(false);
+
+    const titleEl = document.getElementById('gameover-title');
+    const subEl = document.getElementById('gameover-subtitle');
+    const missionEl = document.getElementById('gameover-mission');
+    const missionsStatEl = document.getElementById('stat-missions');
+    const btnRetry = document.getElementById('btn-checkpoint-retry');
+    const btnPlayAgain = document.getElementById('btn-play-again');
+
+    const m = this.missionManager ? this.missionManager.getCurrentMission() : null;
+    const mIdx = this.missionManager ? this.missionManager.currentMissionIndex : 0;
+
+    if (titleEl) {
+      titleEl.className = 'title-lose';
+      titleEl.textContent = 'SIGNAL LOST — YOU DIED';
+    }
+    if (subEl) {
+      subEl.textContent = m ? `Failed during Mission ${m.id}: ${m.title}` : 'Your biometrics have flatlined.';
+    }
+    if (missionEl) {
+      missionEl.textContent = m ? `OBJECTIVE: ${m.objective}` : '';
+    }
+    if (missionsStatEl) {
+      missionsStatEl.textContent = `${mIdx} / 6`;
+    }
+    if (btnRetry) {
+      btnRetry.style.display = 'inline-block';
+      btnRetry.textContent = `RETRY FROM MISSION ${m ? m.id : 1}`;
+    }
+    if (btnPlayAgain) {
+      btnPlayAgain.textContent = 'RESTART CAMPAIGN';
+    }
 
     events.emit('stateChange', this.state);
   }
@@ -612,6 +738,25 @@ export class Game {
 
       this.relays.update(dt, this.vehicle.isOccupied ? { mesh: { position: this.vehicle.mesh.position } } : this.player);
       this.city.updateStreetlights(activeEntityPos);
+
+      // Story Mission Manager update
+      if (this.missionManager) {
+        this.missionManager.update(dt);
+      }
+
+      // Noise System: decay by 0.35/s, add car engine noise if moving
+      if (this.vehicle && this.vehicle.isOccupied && Math.abs(this.vehicle.speed) > 2) {
+        this.noise = Math.min(1.0, this.noise + dt * 0.15);
+      }
+      this.noise = Math.max(0.0, this.noise - dt * 0.35);
+      if (this.player) {
+        this.player.noise = this.noise;
+      }
+
+      const noiseBar = document.getElementById('noise-bar');
+      const noiseText = document.getElementById('noise-text');
+      if (noiseBar) noiseBar.style.width = `${Math.round(this.noise * 100)}%`;
+      if (noiseText) noiseText.textContent = `${Math.round(this.noise * 100)}%`;
 
       for (let i = this.zombies.length - 1; i >= 0; i--) {
         const z = this.zombies[i];
