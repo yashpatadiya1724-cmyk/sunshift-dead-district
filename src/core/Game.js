@@ -600,10 +600,6 @@ export class Game {
     this.stats.relaysCollected = 0;
     this.stats.shiftsSurvived = 0;
 
-    this.autoDetectChecked = false;
-    this.autoDetectFrames = 0;
-    this.autoDetectTotalTime = 0;
-
     this.player.reset();
     this.vehicle.reset();
     this.pickups.reset();
@@ -745,7 +741,7 @@ export class Game {
           this.vehicle.mesh.position.z
         );
       } else {
-        this.player.update(dt, this.city.colliders, this.zombies, this.city.meshes);
+        this.player.update(dt, this.city.colliders, this.zombies, this.city.rayTargets);
       }
 
       this.dirLight.position.set(

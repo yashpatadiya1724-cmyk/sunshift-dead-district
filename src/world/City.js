@@ -8,11 +8,15 @@ export class City {
     this.renderer = renderer;
     this.colliders = [];
     this.meshes = [];
+    this.rayTargets = []; // Simple invisible box proxies for raycasting (never merged)
+    this.proxyMat = new THREE.MeshBasicMaterial({ visible: false });
     this.windowMaterials = [];
     this.lightCones = [];
     this.streetlightPositions = [];
     this.streetLightsPool = [];
     this.lightConeInstanced = null;
+    this._lastLightTargetPos = new THREE.Vector3(999, 999, 999);
+    this._lightUpdateFrame = 0;
 
     this.procTextures = new ProceduralTextures(renderer);
     this.buildCity();
@@ -163,6 +167,13 @@ export class City {
         );
         this.colliders.push(box);
 
+        // Simple box proxy for bullet raycast & camera wall checks (12 triangles per building)
+        const bProxy = new THREE.Mesh(new THREE.BoxGeometry(blockSize, height, blockSize), this.proxyMat);
+        bProxy.position.set(x, height / 2 + 0.35, z);
+        bProxy.updateMatrixWorld(true);
+        bProxy.geometry.computeBoundingBox();
+        this.rayTargets.push(bProxy);
+
         // Roof Ledge Geometry (Merged)
         const ledgeGeo = new THREE.BoxGeometry(blockSize + 0.6, 0.5, blockSize + 0.6);
         ledgeGeo.translate(x, height + 0.35, z);
@@ -205,7 +216,6 @@ export class City {
       brickMesh.matrixAutoUpdate = false;
       brickMesh.updateMatrix();
       this.scene.add(brickMesh);
-      this.meshes.push(brickMesh);
     }
 
     // Merge Concrete Buildings -> 1 Mesh
@@ -217,7 +227,6 @@ export class City {
       concreteMesh.matrixAutoUpdate = false;
       concreteMesh.updateMatrix();
       this.scene.add(concreteMesh);
-      this.meshes.push(concreteMesh);
     }
 
     // Merge Cornices / Roof Ledges -> 1 Mesh
@@ -400,6 +409,14 @@ export class City {
         new THREE.Vector3(x + 1.8, 1.8, z + 1.8)
       );
       this.colliders.push(box);
+
+      // Simple box proxy for bullet & camera raycasting
+      const carProxy = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.8, 4.2), this.proxyMat);
+      carProxy.position.set(x, 0.9, z);
+      carProxy.rotation.y = rotY;
+      carProxy.updateMatrixWorld(true);
+      carProxy.geometry.computeBoundingBox();
+      this.rayTargets.push(carProxy);
     }
 
     if (bodyGeos.length > 0) {
@@ -415,7 +432,6 @@ export class City {
       carBodyMesh.matrixAutoUpdate = false;
       carBodyMesh.updateMatrix();
       this.scene.add(carBodyMesh);
-      this.meshes.push(carBodyMesh);
 
       const cabinMat = new THREE.MeshStandardMaterial({
         color: 0x14181f,
@@ -453,6 +469,12 @@ export class City {
           new THREE.Vector3(x - 0.9, 0, z - 0.9),
           new THREE.Vector3(x + 0.9, 1.7, z + 0.9)
         ));
+
+        const cProxy = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), this.proxyMat);
+        cProxy.position.set(x, 0.8, z);
+        cProxy.updateMatrixWorld(true);
+        cProxy.geometry.computeBoundingBox();
+        this.rayTargets.push(cProxy);
       } else {
         const rotY = Math.random() * Math.PI;
         const bGeo = new THREE.BoxGeometry(3.5, 1.2, 0.7);
@@ -464,6 +486,13 @@ export class City {
           new THREE.Vector3(x - 1.8, 0, z - 1.8),
           new THREE.Vector3(x + 1.8, 1.3, z + 1.8)
         ));
+
+        const bProxy = new THREE.Mesh(new THREE.BoxGeometry(3.5, 1.2, 0.7), this.proxyMat);
+        bProxy.position.set(x, 0.6, z);
+        bProxy.rotation.y = rotY;
+        bProxy.updateMatrixWorld(true);
+        bProxy.geometry.computeBoundingBox();
+        this.rayTargets.push(bProxy);
       }
     }
 
@@ -476,7 +505,6 @@ export class City {
       cratesMesh.matrixAutoUpdate = false;
       cratesMesh.updateMatrix();
       this.scene.add(cratesMesh);
-      this.meshes.push(cratesMesh);
     }
 
     if (barrierGeos.length > 0) {
@@ -488,7 +516,6 @@ export class City {
       barriersMesh.matrixAutoUpdate = false;
       barriersMesh.updateMatrix();
       this.scene.add(barriersMesh);
-      this.meshes.push(barriersMesh);
     }
   }
 
@@ -517,13 +544,23 @@ export class City {
       return;
     }
 
-    const sorted = [...this.streetlightPositions].sort((a, b) => {
+    this._lightUpdateFrame++;
+    const distSq = this._lastLightTargetPos.distanceToSquared(targetPos);
+    if (distSq < 4.0 && this._lightUpdateFrame % 15 !== 0) {
+      return;
+    }
+    this._lastLightTargetPos.copy(targetPos);
+
+    if (!this._sortedLights) {
+      this._sortedLights = this.streetlightPositions.slice();
+    }
+    this._sortedLights.sort((a, b) => {
       return a.distanceToSquared(targetPos) - b.distanceToSquared(targetPos);
     });
 
     for (let i = 0; i < this.streetLightsPool.length; i++) {
-      if (i < maxLights && i < sorted.length) {
-        this.streetLightsPool[i].position.copy(sorted[i]);
+      if (i < maxLights && i < this._sortedLights.length) {
+        this.streetLightsPool[i].position.copy(this._sortedLights[i]);
         this.streetLightsPool[i].intensity = 3.5;
       } else {
         this.streetLightsPool[i].intensity = 0;

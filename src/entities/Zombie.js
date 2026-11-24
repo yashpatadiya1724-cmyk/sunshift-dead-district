@@ -233,7 +233,7 @@ export class Zombie {
     this.groanTimer -= dt;
     if (this.groanTimer <= 0) {
       this.groanTimer = 4.0 + Math.random() * 5.0;
-      if (this.sound && horizontalDist < CONFIG.zombie.soundHearingRadius) {
+      if (this.sound && typeof this.sound.zombieGroan === 'function' && horizontalDist < CONFIG.zombie.soundHearingRadius) {
         const volume = Math.max(0, 1.0 - (horizontalDist / CONFIG.zombie.soundHearingRadius));
         this.sound.zombieGroan(volume);
       }
@@ -287,7 +287,9 @@ export class Zombie {
       if (this.attackTimer <= 0) {
         this.attackTimer = this.attackCooldown;
         player.takeDamage(this.damage, this.mesh.position);
-        if (this.sound) this.sound.zombieAttack();
+        if (this.sound && typeof this.sound.zombieAttack === 'function') {
+          this.sound.zombieAttack();
+        }
       }
     }
   }
@@ -324,7 +326,9 @@ export class Zombie {
 
   die() {
     this.isDead = true;
-    if (this.sound) this.sound.zombieDeath();
+    if (this.sound && typeof this.sound.zombieDeath === 'function') {
+      this.sound.zombieDeath();
+    }
     this.mesh.rotation.x = -Math.PI / 2;
     this.mesh.position.y = 0.2;
     events.emit('zombieKilled', this);

@@ -248,7 +248,7 @@ export class Player {
     });
   }
 
-  update(dt, cityColliders, zombies, cityMeshes) {
+  update(dt, cityColliders, zombies, cityRayTargets = []) {
     // 1. Mouse Look with Invert Y
     const mouseDelta = this.input.consumeMouseDelta();
     this.yaw -= mouseDelta.x * this.sensitivity;
@@ -322,7 +322,7 @@ export class Player {
       this.rightArm.rotation.x = 0;
     }
 
-    // 4. Camera Follow with Wall Raycast Occlusion Avoidance
+    // 4. Camera Follow with Wall Raycast Occlusion Avoidance (Checked every 3rd frame)
     _headPos.copy(this.mesh.position);
     _headPos.y += 1.6;
 
@@ -334,14 +334,20 @@ export class Player {
     );
 
     _camDir.copy(_idealOffset).normalize();
-    this.camRaycaster.set(_headPos, _camDir);
-    this.camRaycaster.far = this.camDistance;
 
-    const hits = this.camRaycaster.intersectObjects(cityMeshes, false);
-    let actualDist = this.camDistance;
-    if (hits.length > 0) {
-      actualDist = Math.max(1.0, hits[0].distance - 0.35);
+    this.camRaycastFrame = (this.camRaycastFrame || 0) + 1;
+    if (this.camRaycastFrame % 3 === 0) {
+      this.camRaycaster.set(_headPos, _camDir);
+      this.camRaycaster.far = this.camDistance;
+
+      const hits = this.camRaycaster.intersectObjects(cityRayTargets, false);
+      if (hits.length > 0) {
+        this.cachedCamDist = Math.max(1.0, hits[0].distance - 0.35);
+      } else {
+        this.cachedCamDist = this.camDistance;
+      }
     }
+    const actualDist = this.cachedCamDist !== undefined ? this.cachedCamDist : this.camDistance;
 
     _finalCamPos.copy(_headPos).addScaledVector(_camDir, actualDist);
     _finalCamPos.x += shakeOffset.x;
@@ -383,7 +389,7 @@ export class Player {
 
     if (this.input.mouse.isDown && this.shootTimer <= 0 && !this.isReloading) {
       if (w.magAmmo > 0) {
-        this.shoot(zombies, cityMeshes);
+        this.shoot(zombies, cityRayTargets);
         w.magAmmo--;
         this.shootTimer = w.fireRate;
         this.emitWeaponState();
@@ -411,7 +417,7 @@ export class Player {
     return false;
   }
 
-  shoot(zombies, cityMeshes = []) {
+  shoot(zombies, cityRayTargets = []) {
     events.emit('playerShot');
 
     const w = this.getCurrentWeapon();
@@ -430,9 +436,8 @@ export class Player {
 
     const activeZombies = zombies.filter(z => !z.isDead);
     const activeZombieMeshes = activeZombies.map(z => z.mesh);
-    const candidateTargets = [...activeZombieMeshes, ...cityMeshes];
 
-    // Fire pellets without allocating new Raycaster per pellet
+    // Fire pellets with dedicated fast hierarchy separation
     for (let p = 0; p < w.pellets; p++) {
       _spreadForward.set(
         -Math.sin(this.yaw) * Math.cos(this.pitch) + (Math.random() - 0.5) * w.spread,
@@ -446,27 +451,42 @@ export class Player {
       _shootRaycaster.set(_headPos, _spreadForward);
       _shootRaycaster.far = this.maxShootingRange;
 
-      const hits = _shootRaycaster.intersectObjects(candidateTargets, true);
+      // 1. Check against active zombie rigs (recursive)
+      const zombieHits = _shootRaycaster.intersectObjects(activeZombieMeshes, true);
+      // 2. Check against simple box proxies (flat, non-recursive, 12 triangles per box)
+      const cityHits = (cityRayTargets && cityRayTargets.length > 0)
+        ? _shootRaycaster.intersectObjects(cityRayTargets, false)
+        : [];
 
-      if (hits.length > 0) {
-        const hit = hits[0];
-        let hitZombie = null;
+      let nearestHit = null;
+      let hitZombie = null;
 
-        let obj = hit.object;
+      if (zombieHits.length > 0) {
+        nearestHit = zombieHits[0];
+        let obj = nearestHit.object;
         while (obj) {
           hitZombie = activeZombies.find(z => z.mesh === obj);
           if (hitZombie) break;
           obj = obj.parent;
         }
+      }
 
+      if (cityHits.length > 0) {
+        if (!nearestHit || cityHits[0].distance < nearestHit.distance) {
+          nearestHit = cityHits[0];
+          hitZombie = null; // City building/prop wall was hit first
+        }
+      }
+
+      if (nearestHit) {
         if (hitZombie) {
-          const isHeadshot = (hit.point.y - hitZombie.mesh.position.y) > 1.45 * hitZombie.archetype.scale;
+          const isHeadshot = (nearestHit.point.y - hitZombie.mesh.position.y) > 1.45 * hitZombie.archetype.scale;
           const finalDmg = isHeadshot ? w.damage * 2.0 : w.damage;
 
           hitZombie.takeDamage(finalDmg);
 
           if (this.effects) {
-            this.effects.spawnBlood(hit.point);
+            this.effects.spawnBlood(nearestHit.point);
             if (isHeadshot) {
               this.effects.addShake(0.12);
               this.effects.showBanner('CRITICAL HEADSHOT!', '#ff2222');
@@ -474,7 +494,7 @@ export class Player {
           }
         } else {
           if (this.effects) {
-            this.effects.spawnSpark(hit.point);
+            this.effects.spawnSpark(nearestHit.point);
           }
         }
       }
@@ -485,11 +505,14 @@ export class Player {
     if (this.health <= 0) return;
     this.health = Math.max(0, this.health - amount);
 
-    if (this.sound) this.sound.playerHit();
+    if (this.sound) {
+      if (typeof this.sound.playerHurt === 'function') this.sound.playerHurt();
+      else if (typeof this.sound.playerHit === 'function') this.sound.playerHit();
+    }
     if (this.effects) {
       this.effects.flashDamage();
       this.effects.addShake(0.22);
-      if (sourcePos) {
+      if (sourcePos && typeof this.effects.showDamageArc === 'function') {
         this.effects.showDamageArc(this.mesh.position, this.yaw, sourcePos);
       }
     }
@@ -522,7 +545,11 @@ export class Player {
   die() {
     if (this.sound) {
       this.sound.setLowHealthHeartbeat(false);
-      this.sound.playerDeath();
+      if (typeof this.sound.playerDeath === 'function') {
+        this.sound.playerDeath();
+      } else if (typeof this.sound.gameOver === 'function') {
+        this.sound.gameOver();
+      }
     }
     if (this.effects) {
       this.effects.setLowHealthEffect(false);

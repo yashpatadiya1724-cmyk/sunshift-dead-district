@@ -39,7 +39,44 @@ export class SkyLighting {
     this.targetTurbidity = 2.5;
     this.targetRayleigh = 1.2;
 
-    this.updateSun(true);
+    // Pre-bake Day and Night PMREM environment maps once at boot
+    this.dayEnvMap = null;
+    this.nightEnvMap = null;
+    this.prebakeEnvironmentMaps();
+
+    this.updateSun(false);
+  }
+
+  prebakeEnvironmentMaps() {
+    try {
+      // 1. Bake Day Environment
+      this.setSkyParams(this.bakingSky, 45, 180, 2.5, 1.2, 0.005, 0.8);
+      const dayTarget = this.pmremGenerator.fromScene(this.skyScene);
+      this.dayEnvMap = dayTarget.texture;
+
+      // 2. Bake Night Environment
+      this.setSkyParams(this.bakingSky, -2.5, 180, 12.0, 4.5, 0.005, 0.8);
+      const nightTarget = this.pmremGenerator.fromScene(this.skyScene);
+      this.nightEnvMap = nightTarget.texture;
+
+      // Assign initial day environment
+      this.scene.environment = this.dayEnvMap;
+    } catch (e) {
+      console.warn('Pre-bake PMREM fallback:', e);
+    }
+  }
+
+  setSkyParams(targetSky, elevation, azimuth, turbidity, rayleigh, mieCoefficient, mieDirectionalG) {
+    const phi = THREE.MathUtils.degToRad(90 - elevation);
+    const theta = THREE.MathUtils.degToRad(azimuth);
+    const sunPos = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
+
+    const uniforms = targetSky.material.uniforms;
+    uniforms['turbidity'].value = turbidity;
+    uniforms['rayleigh'].value = rayleigh;
+    uniforms['mieCoefficient'].value = mieCoefficient;
+    uniforms['mieDirectionalG'].value = mieDirectionalG;
+    uniforms['sunPosition'].value.copy(sunPos);
   }
 
   setShiftPhase(isNight) {
@@ -48,17 +85,19 @@ export class SkyLighting {
       this.targetElevation = -2.5;
       this.targetTurbidity = 12.0;
       this.targetRayleigh = 4.5;
+      if (this.nightEnvMap) this.scene.environment = this.nightEnvMap;
     } else {
       // Golden sunlight sky
       this.targetElevation = 52.0;
       this.targetTurbidity = 2.2;
       this.targetRayleigh = 1.1;
+      if (this.dayEnvMap) this.scene.environment = this.dayEnvMap;
     }
-    // Update immediately and bake PMREM environment once
+    // Update sun position without mid-game PMREM rebaking
     this.elevation = this.targetElevation;
     this.turbidity = this.targetTurbidity;
     this.rayleigh = this.targetRayleigh;
-    this.updateSun(true);
+    this.updateSun(false);
   }
 
   updateSun(bakeEnvironment = false) {

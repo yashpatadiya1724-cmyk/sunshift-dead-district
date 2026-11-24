@@ -490,6 +490,29 @@ export class Sound {
     osc.stop(t + 0.75);
   }
 
+  zombieAttack() {
+    this.ensureContext();
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.exponentialRampToValueAtTime(70, t + 0.18);
+
+    gain.gain.setValueAtTime(0.3, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(t);
+    osc.stop(t + 0.2);
+  }
+
+  playerHit() {
+    this.playerHurt();
+  }
+
   playerHurt() {
     this.ensureContext();
     const t = this.ctx.currentTime;
@@ -586,5 +609,9 @@ export class Sound {
       osc.start(start);
       osc.stop(start + 0.35);
     });
+  }
+
+  playerDeath() {
+    this.gameOver();
   }
 }
