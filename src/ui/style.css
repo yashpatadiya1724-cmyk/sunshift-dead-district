@@ -759,3 +759,13 @@ body, html {
 }
 
 .hidden-panel { display: none !important; }
+
+
+/* Loading bar fill */
+#loading-bar-fill, #loading-progress {
+  width: 0%;
+  height: 100%;
+  background: #ffaa00;
+  box-shadow: 0 0 10px #ffaa00;
+  border-radius: 4px;
+}

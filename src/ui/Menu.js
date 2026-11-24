@@ -72,7 +72,7 @@ export class Menu {
       const btn = document.getElementById(id);
       if (btn) {
         btn.addEventListener('click', (e) => {
-          e.stopPropagation(); // Avoid triggering canvas pointer lock
+          e.stopPropagation();
           if (this.game.sound) this.game.sound.playClick();
           handler();
         });
@@ -160,10 +160,10 @@ export class Menu {
         const q = btn.dataset.quality;
         this.qualityBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        if (typeof this.game.applyQuality === 'function') {
-          this.game.applyQuality(q);
-        } else if (typeof this.game.setQuality === 'function') {
+        if (typeof this.game.setQuality === 'function') {
           this.game.setQuality(q);
+        } else if (typeof this.game.applyQuality === 'function') {
+          this.game.applyQuality(q);
         }
       });
     });
@@ -238,7 +238,7 @@ export class Menu {
 
   startLoadingSequence() {
     this.showPanel(this.loadingScreen);
-    const bar = document.getElementById('loading-bar-fill');
+    const bar = document.getElementById('loading-bar-fill') || document.getElementById('loading-progress');
     let progress = 0;
 
     const interval = setInterval(() => {
@@ -248,7 +248,12 @@ export class Menu {
       if (progress >= 1.0) {
         clearInterval(interval);
         setTimeout(() => {
-          this.game.showMenu();
+          try {
+            this.game.showMenu();
+          } catch (e) {
+            console.error('Error calling showMenu:', e);
+          }
+          this.showPanel(this.mainMenu);
         }, 300);
       }
     }, 250);

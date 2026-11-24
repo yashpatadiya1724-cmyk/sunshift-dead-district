@@ -1,9 +1,11 @@
+// FILE: src/core/Game.js
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
 
 import { CONFIG } from '../config.js';
 import { events } from './Events.js';
@@ -79,7 +81,8 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    document.getElementById('game-container').appendChild(this.renderer.domElement);
+    const container = document.getElementById('game-container') || document.body;
+    container.appendChild(this.renderer.domElement);
 
     // 2. Lighting
     this.hemiLight = new THREE.HemisphereLight(CONFIG.shift.dayHemiSky, CONFIG.shift.dayHemiGround, CONFIG.shift.dayHemiIntensity);
@@ -103,45 +106,27 @@ export class Game {
     this.scene.add(this.dirLight.target);
 
     // 3. Post-Processing Pipeline
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    try {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
 
-    this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(window.innerWidth, window.innerHeight),
-      CONFIG.shift.dayBloom,
-      0.5,
-      0.82
-    );
-    this.composer.addPass(this.bloomPass);
+      this.bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        CONFIG.shift.dayBloom,
+        0.5,
+        0.82
+      );
+      this.composer.addPass(this.bloomPass);
 
-    const VignetteShader = {
-      uniforms: {
-        tDiffuse: { value: null },
-        offset: { value: 1.1 },
-        darkness: { value: 1.35 }
-      },
-      vertexShader: `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform float offset;
-        uniform float darkness;
-        varying vec2 vUv;
-        void main() {
-          vec4 tex = texture2D(tDiffuse, vUv);
-          vec2 uv = (vUv - vec2(0.5)) * vec2(offset);
-          tex.rgb = mix(tex.rgb, vec3(0.0), clamp(dot(uv, uv) * darkness, 0.0, 1.0));
-          gl_FragColor = tex;
-        }
-      `
-    };
-    this.composer.addPass(new ShaderPass(VignetteShader));
-    this.composer.addPass(new OutputPass());
+      const vignettePass = new ShaderPass(VignetteShader);
+      vignettePass.uniforms['offset'].value = 1.05;
+      vignettePass.uniforms['darkness'].value = 1.25;
+      this.composer.addPass(vignettePass);
+      this.composer.addPass(new OutputPass());
+    } catch (e) {
+      console.warn('EffectComposer initialization failed, falling back to WebGLRenderer:', e);
+      this.composer = null;
+    }
 
     // 4. Core Systems, Entities, Vehicle & Pickups
     this.sound = new Sound();
@@ -252,7 +237,9 @@ export class Game {
     this.saveSettings();
   }
 
-  setQuality(presetName) { this.applyQuality(presetName); }
+  setQuality(presetName) {
+    this.applyQuality(presetName);
+  }
 
   applyQuality(presetName) {
     const preset = CONFIG.quality[presetName] || CONFIG.quality.HIGH;
@@ -263,9 +250,13 @@ export class Game {
     this.renderer.shadowMap.enabled = preset.shadows;
     this.renderer.setPixelRatio(preset.pixelRatio);
 
-    this.composer.setPixelRatio(preset.pixelRatio);
-    this.composer.setSize(window.innerWidth, window.innerHeight);
-    this.bloomPass.enabled = preset.bloom;
+    if (this.composer) {
+      this.composer.setPixelRatio(preset.pixelRatio);
+      this.composer.setSize(window.innerWidth, window.innerHeight);
+    }
+    if (this.bloomPass) {
+      this.bloomPass.enabled = preset.bloom;
+    }
 
     if (preset.shadows) {
       this.dirLight.shadow.mapSize.width = preset.shadowMapSize;
@@ -302,10 +293,8 @@ export class Game {
         if (this.effects) this.effects.flashShift(isNight);
 
         if (isNight) {
-          // Nightfall: Spawn 6 extra zombies at least 35+ units away
           this.spawnExtraNightZombies();
         } else {
-          // Dawn: Fade out and remove extra night zombies
           this.fadeExtraNightZombies();
         }
       }
@@ -383,7 +372,6 @@ export class Game {
 
   fadeExtraNightZombies() {
     this.extraNightZombies.forEach(z => z.startDawnFade());
-    // Filter out destroyed extra zombies after fade
     setTimeout(() => {
       this.extraNightZombies = [];
       this.zombies = this.zombies.filter(z => !z.isDead && !z.isFading);
@@ -540,8 +528,21 @@ export class Game {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.composer.setSize(window.innerWidth, window.innerHeight);
-    this.bloomPass.resolution.set(window.innerWidth, window.innerHeight);
+    if (this.composer) {
+      this.composer.setSize(window.innerWidth, window.innerHeight);
+    }
+  }
+
+  renderPass() {
+    try {
+      if (this.composer) {
+        this.composer.render();
+      } else {
+        this.renderer.render(this.scene, this.camera);
+      }
+    } catch (e) {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   loop() {
@@ -561,15 +562,15 @@ export class Game {
     }
 
     if (this.state === GAME_STATES.MENU || this.state === GAME_STATES.LOADING) {
-      this.menuCamAngle += dt * 0.12;
+      this.menuCamAngle += dt * 0.15;
       this.camera.position.set(
-        Math.cos(this.menuCamAngle) * 32,
-        18,
-        Math.sin(this.menuCamAngle) * 32
+        Math.cos(this.menuCamAngle) * 36,
+        20,
+        Math.sin(this.menuCamAngle) * 36
       );
       this.camera.lookAt(0, 3, 0);
       this.shift.applyShiftVisuals(dt);
-      this.composer.render();
+      this.renderPass();
       return;
     }
 
@@ -613,6 +614,6 @@ export class Game {
       }
     }
 
-    this.composer.render();
+    this.renderPass();
   }
 }
