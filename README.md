@@ -77,3 +77,24 @@ In *SUNSHIFT: Dead District*, the environment is destabilized by an accelerated 
 ---
 
 ## 💻 Local Development Setup
+
+```bash
+git clone https://github.com/yashpatadiya1724-cmyk/sunshift-dead-district.git
+cd sunshift-dead-district
+npm install
+npm run dev
+```
+
+---
+
+## 🎨 Asset Attributions & Licenses
+
+*SUNSHIFT: Dead District* utilizes open-standard 3D assets, CC0 / CC-BY models, and a robust zero-crash procedural fallback engine:
+
+- **Kenney (CC0 1.0 Universal):** City modular buildings, road tiles, and street props ([kenney.nl](https://kenney.nl)).
+- **Quaternius (CC0 1.0 Universal):** Stylized survivor character and animated undead packs ([quaternius.com](https://quaternius.com)).
+- **Poly Pizza / Google Poly (CC-BY 3.0 / CC0):** Low-poly muscle car vehicle and firearm weaponry ([poly.pizza](https://poly.pizza)).
+- **Poly Haven (CC0 1.0 Universal):** HDR atmospheric environment skies ([polyhaven.com](https://polyhaven.com)).
+
+Full details and legal texts are available in [`public/LICENSES.txt`](./public/LICENSES.txt).
+

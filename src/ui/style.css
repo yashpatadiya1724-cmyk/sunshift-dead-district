@@ -624,6 +624,7 @@ body, html {
   overflow: hidden;
   margin-bottom: 12px;
 }
+#loading-bar-fill,
 #loading-progress {
   width: 0%;
   height: 100%;

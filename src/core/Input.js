@@ -48,6 +48,10 @@ export class Input {
     return !!this.keys[code];
   }
 
+  isMouseDown(button = 0) {
+    return !!this.mouse?.isDown;
+  }
+
   consumeMouseDelta() {
     const delta = { x: this.mouse.deltaX, y: this.mouse.deltaY };
     this.mouse.deltaX = 0;

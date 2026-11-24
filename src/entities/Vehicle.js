@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { events } from '../core/Events.js';
+import { assets } from '../core/Assets.js';
 
 export class Vehicle {
   constructor(scene, sound, effects) {
@@ -15,65 +16,20 @@ export class Vehicle {
     this.health = CONFIG.vehicle.maxHealth;
     this.isDestroyed = false;
     this.respawnTimer = 0;
-
-    // Build Low-Poly Muscle Car 3D Rig
-    this.mesh = new THREE.Group();
-
-    // 1. Muscle Car Body (Sleek aggressive red/black)
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x991111 });
-    const chassisGeo = new THREE.BoxGeometry(2.3, 0.65, 4.4);
-    this.chassis = new THREE.Mesh(chassisGeo, bodyMat);
-    this.chassis.position.y = 0.55;
-    this.chassis.castShadow = true;
-    this.chassis.receiveShadow = true;
-    this.mesh.add(this.chassis);
-
-    // 2. Cabin & Windshield
-    const cabinMat = new THREE.MeshLambertMaterial({ color: 0x14181f });
-    const cabinGeo = new THREE.BoxGeometry(1.95, 0.62, 2.3);
-    const cabin = new THREE.Mesh(cabinGeo, cabinMat);
-    cabin.position.set(0, 1.15, -0.3);
-    cabin.castShadow = true;
-    this.mesh.add(cabin);
-
-    // 3. 4 Low-Poly Wheels
-    const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-    const wheelGeo = new THREE.BoxGeometry(0.4, 0.7, 0.7);
     this.wheels = [];
-    const wheelOffsets = [
-      [-1.15, 0.35, 1.4],  // Front Left
-      [1.15, 0.35, 1.4],   // Front Right
-      [-1.15, 0.35, -1.4], // Rear Left
-      [1.15, 0.35, -1.4]   // Rear Right
-    ];
-    wheelOffsets.forEach(([wx, wy, wz]) => {
-      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-      wheel.position.set(wx, wy, wz);
-      wheel.castShadow = true;
-      this.mesh.add(wheel);
-      this.wheels.push(wheel);
-    });
 
-    // 4. Emissive Headlights & SpotLights
-    const lightGlowMat = new THREE.MeshBasicMaterial({ color: 0xffffcc, fog: false });
-    const lightGeo = new THREE.BoxGeometry(0.35, 0.18, 0.1);
-    
-    const leftLightMesh = new THREE.Mesh(lightGeo, lightGlowMat);
-    leftLightMesh.position.set(-0.8, 0.65, 2.21);
-    this.mesh.add(leftLightMesh);
+    // 1. Instance Car Model (GLB or Procedural Fallback)
+    const carInstance = assets.getInstance('car');
+    if (carInstance) {
+      this.mesh = carInstance;
+      this.findWheelMeshes();
+    } else {
+      this.mesh = new THREE.Group();
+      this.buildDefaultMuscleCar();
+    }
 
-    const rightLightMesh = new THREE.Mesh(lightGeo, lightGlowMat);
-    rightLightMesh.position.set(0.8, 0.65, 2.21);
-    this.mesh.add(rightLightMesh);
-
-    // Forward SpotLights
-    this.headlightSpot = new THREE.SpotLight(0xffffdd, 0, 45, Math.PI / 4.5, 0.4, 1.2);
-    this.headlightSpot.position.set(0, 0.8, 2.3);
-    this.headlightTarget = new THREE.Object3D();
-    this.headlightTarget.position.set(0, 0.5, 25);
-    this.mesh.add(this.headlightSpot);
-    this.mesh.add(this.headlightTarget);
-    this.headlightSpot.target = this.headlightTarget;
+    // 2. Headlights & SpotLight setup
+    this.setupHeadlights();
 
     // Initial Placement
     this.reset();
@@ -87,6 +43,85 @@ export class Vehicle {
     });
   }
 
+  findWheelMeshes() {
+    this.wheels = [];
+    this.mesh.traverse((node) => {
+      if (node.isMesh && (node.name.toLowerCase().includes('wheel') || node.name.startsWith('wheel_'))) {
+        this.wheels.push(node);
+      }
+    });
+  }
+
+  buildDefaultMuscleCar() {
+    // 1. Chassis
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x991111,
+      roughness: 0.35,
+      metalness: 0.55
+    });
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.65, 4.4), bodyMat);
+    chassis.position.y = 0.55;
+    chassis.castShadow = true;
+    chassis.receiveShadow = true;
+    this.mesh.add(chassis);
+
+    // 2. Cabin
+    const cabinMat = new THREE.MeshStandardMaterial({
+      color: 0x14181f,
+      roughness: 0.25,
+      metalness: 0.75
+    });
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.62, 2.3), cabinMat);
+    cabin.position.set(0, 1.15, -0.3);
+    cabin.castShadow = true;
+    this.mesh.add(cabin);
+
+    // 3. Wheels
+    const wheelMat = new THREE.MeshStandardMaterial({
+      color: 0x151515,
+      roughness: 0.85,
+      metalness: 0.2
+    });
+    const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.35, 14);
+    wheelGeo.rotateZ(Math.PI / 2);
+
+    const offsets = [
+      [-1.15, 0.38, 1.35],
+      [1.15, 0.38, 1.35],
+      [-1.15, 0.38, -1.35],
+      [1.15, 0.38, -1.35]
+    ];
+
+    offsets.forEach(([wx, wy, wz]) => {
+      const w = new THREE.Mesh(wheelGeo, wheelMat);
+      w.position.set(wx, wy, wz);
+      w.castShadow = true;
+      this.mesh.add(w);
+      this.wheels.push(w);
+    });
+  }
+
+  setupHeadlights() {
+    const lightGlowMat = new THREE.MeshBasicMaterial({ color: 0xffffcc, fog: false });
+    const lightGeo = new THREE.BoxGeometry(0.35, 0.18, 0.1);
+
+    const leftLightMesh = new THREE.Mesh(lightGeo, lightGlowMat);
+    leftLightMesh.position.set(-0.8, 0.65, 2.21);
+    this.mesh.add(leftLightMesh);
+
+    const rightLightMesh = new THREE.Mesh(lightGeo, lightGlowMat);
+    rightLightMesh.position.set(0.8, 0.65, 2.21);
+    this.mesh.add(rightLightMesh);
+
+    this.headlightSpot = new THREE.SpotLight(0xffffdd, 0, 45, Math.PI / 4.5, 0.4, 1.2);
+    this.headlightSpot.position.set(0, 0.8, 2.3);
+    this.headlightTarget = new THREE.Object3D();
+    this.headlightTarget.position.set(0, 0.5, 25);
+    this.mesh.add(this.headlightSpot);
+    this.mesh.add(this.headlightTarget);
+    this.headlightSpot.target = this.headlightTarget;
+  }
+
   reset() {
     this.isOccupied = false;
     this.speed = 0;
@@ -98,6 +133,7 @@ export class Vehicle {
     this.mesh.position.copy(CONFIG.vehicle.spawnPosition);
     this.mesh.rotation.set(0, 0, 0);
     this.headlightSpot.intensity = 0;
+
     if (this.sound) this.sound.stopEngine();
     events.emit('vehicleState', { inVehicle: false, speed: 0, health: this.health });
   }
@@ -107,7 +143,6 @@ export class Vehicle {
     if (!player || this.isDestroyed) return;
 
     if (!this.isOccupied) {
-      // Check distance to car
       const dist = player.mesh.position.distanceTo(this.mesh.position);
       if (dist <= CONFIG.vehicle.enterRadius) {
         this.enter(player);
@@ -128,7 +163,6 @@ export class Vehicle {
     this.isOccupied = false;
     player.mesh.visible = true;
 
-    // Eject player slightly to the left of the car
     const sideOffset = new THREE.Vector3(-2.2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
     player.mesh.position.copy(this.mesh.position).add(sideOffset);
     player.mesh.position.y = 0;
@@ -138,7 +172,6 @@ export class Vehicle {
   }
 
   update(dt, input, cityColliders, zombies, isNight) {
-    // Handle respawn timer if destroyed
     if (this.isDestroyed) {
       this.respawnTimer -= dt;
       if (this.respawnTimer <= 0) {
@@ -147,11 +180,9 @@ export class Vehicle {
       return;
     }
 
-    // Toggle headlights based on Night Shift
     this.headlightSpot.intensity = isNight ? 2.5 : 0;
 
     if (!this.isOccupied) {
-      // Apply passive ground friction when empty
       if (Math.abs(this.speed) > 0.1) {
         this.speed -= Math.sign(this.speed) * CONFIG.vehicle.friction * dt;
         this.moveWithCollisions(dt, cityColliders);
@@ -173,7 +204,6 @@ export class Vehicle {
         this.speed = Math.max(CONFIG.vehicle.reverseSpeed, this.speed - CONFIG.vehicle.acceleration * 0.7 * dt);
       }
     } else {
-      // Engine drag / coasting friction
       if (Math.abs(this.speed) > 0.1) {
         this.speed -= Math.sign(this.speed) * CONFIG.vehicle.friction * dt;
       } else {
@@ -181,7 +211,6 @@ export class Vehicle {
       }
     }
 
-    // Handbrake
     if (isHandbraking) {
       this.speed = THREE.MathUtils.lerp(this.speed, 0, CONFIG.vehicle.handbrakeDecel * 0.05 * dt);
     }
@@ -199,22 +228,30 @@ export class Vehicle {
 
     this.mesh.rotation.y = this.yaw;
 
-    // 3. Movement & Collision with buildings
+    // 3. Movement & Collision
     this.moveWithCollisions(dt, cityColliders);
 
-    // 4. Zombie Roadkill Check
+    // 4. Wheels Rotation Animation
+    if (this.wheels.length > 0 && Math.abs(this.speed) > 0.01) {
+      const spinDelta = (this.speed / 0.38) * dt;
+      this.wheels.forEach((w) => {
+        w.rotation.x += spinDelta;
+      });
+    }
+
+    // 5. Zombie Roadkill Check
     this.checkZombieRoadkill(zombies);
 
-    // 5. Sound & Engine Pitch
+    // 6. Sound & Engine Pitch
     if (this.sound) {
       const speedRatio = Math.abs(this.speed) / CONFIG.vehicle.maxSpeed;
       this.sound.updateEngine(speedRatio);
     }
 
-    // 6. Emit state for HUD
+    // 7. Emit state for HUD
     events.emit('vehicleState', {
       inVehicle: true,
-      speed: Math.abs(Math.round(this.speed * 3.6)), // km/h
+      speed: Math.abs(Math.round(this.speed * 3.6)),
       health: this.health
     });
   }
@@ -223,24 +260,22 @@ export class Vehicle {
     const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
     const step = forward.multiplyScalar(this.speed * dt);
 
-    // Check X axis
     const testPosX = this.mesh.position.clone();
     testPosX.x += step.x;
     if (!this.checkCarCollision(testPosX, colliders)) {
       this.mesh.position.x = testPosX.x;
     } else {
       this.onBuildingCrash(Math.abs(this.speed));
-      this.speed *= -0.3; // Bounce back
+      this.speed *= -0.3;
     }
 
-    // Check Z axis
     const testPosZ = this.mesh.position.clone();
     testPosZ.z += step.z;
     if (!this.checkCarCollision(testPosZ, colliders)) {
       this.mesh.position.z = testPosZ.z;
     } else {
       this.onBuildingCrash(Math.abs(this.speed));
-      this.speed *= -0.3; // Bounce back
+      this.speed *= -0.3;
     }
   }
 
@@ -279,7 +314,7 @@ export class Vehicle {
 
       const dist = this.mesh.position.distanceTo(z.mesh.position);
       if (dist < 2.6) {
-        z.takeDamage(999); // Instant crush
+        z.takeDamage(999);
         if (this.effects) {
           this.effects.spawnBlood(z.mesh.position);
           this.effects.addShake(0.12);
@@ -296,20 +331,6 @@ export class Vehicle {
     if (this.sound) {
       this.sound.stopEngine();
       this.sound.carExplosion();
-    }
-
-    if (this.effects) {
-      this.effects.spawnSpark(this.mesh.position);
-      this.effects.spawnBlood(this.mesh.position);
-      this.effects.addShake(0.6);
-      this.effects.showBanner('VEHICLE DESTROYED!', '#ff2222');
-    }
-
-    // If player inside, eject and damage player
-    const player = window.__SUNSHIFT_GAME__?.player;
-    if (player && this.isOccupied) {
-      this.exit(player);
-      player.takeDamage(CONFIG.vehicle.ejectDamage);
     }
   }
 }

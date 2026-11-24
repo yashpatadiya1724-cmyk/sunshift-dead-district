@@ -258,6 +258,10 @@ export class Sound {
     osc.stop(t + 0.65);
   }
 
+  playFlare() {
+    this.flarePulse();
+  }
+
   // Shift Countdown Warning Beep (Last 5 seconds)
   warningBeep() {
     this.shiftWarningBeep();
@@ -592,8 +596,16 @@ export class Sound {
     this.playerHurt();
   }
 
+  playHurt() {
+    this.playerHurt();
+  }
+
   playerDeath() {
     this.gameOver();
+  }
+
+  playDeath() {
+    this.playerDeath();
   }
 
   zombieAttack() {

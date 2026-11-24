@@ -6,6 +6,8 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
+import { ColorGradingShader } from './ColorGradingShader.js';
+import { assets } from './Assets.js';
 
 import { CONFIG } from '../config.js';
 import { events } from './Events.js';
@@ -125,13 +127,30 @@ export class Game {
       vignettePass.uniforms['offset'].value = 1.05;
       vignettePass.uniforms['darkness'].value = 1.25;
       this.composer.addPass(vignettePass);
+
+      // Color Grading ShaderPass (Contrast, Saturation, Night Split Teal-Red Tint)
+      this.colorGradingPass = new ShaderPass(ColorGradingShader);
+      this.composer.addPass(this.colorGradingPass);
+
       this.composer.addPass(new OutputPass());
     } catch (e) {
       console.warn('EffectComposer initialization failed, falling back to WebGLRenderer:', e);
       this.composer = null;
     }
 
-    // 4. Core Systems, Entities, Vehicle & Pickups
+    // 4. PMREMGenerator & HDRI Environment
+    this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+    this.pmremGenerator.compileEquirectangularShader();
+
+    const dayHdr = assets.get('env_day');
+    const nightHdr = assets.get('env_night');
+    this.dayEnvMap = dayHdr ? this.pmremGenerator.fromEquirectangular(dayHdr).texture : null;
+    this.nightEnvMap = nightHdr ? this.pmremGenerator.fromEquirectangular(nightHdr).texture : null;
+    if (this.dayEnvMap) {
+      this.scene.environment = this.dayEnvMap;
+    }
+
+    // 5. Core Systems, Entities, Vehicle & Pickups
     this.sound = new Sound();
     this.sound.setMasterVolume(this.settings.volume);
 
@@ -139,7 +158,18 @@ export class Game {
     this.input = new Input();
 
     this.city = new City(this.scene);
-    this.shift = new ShiftSystem(this.scene, this.dirLight, this.hemiLight, this.bloomPass, this.city, this.sound, this.effects);
+    this.shift = new ShiftSystem(
+      this.scene,
+      this.dirLight,
+      this.hemiLight,
+      this.bloomPass,
+      this.city,
+      this.sound,
+      this.effects,
+      this.colorGradingPass,
+      this.dayEnvMap,
+      this.nightEnvMap
+    );
     this.player = new Player(this.scene, this.camera, this.input, this.sound, this.effects);
     this.player.sensitivity = this.settings.sensitivity;
     this.player.invertY = !!this.settings.invertY;
@@ -147,6 +177,9 @@ export class Game {
     this.vehicle = new Vehicle(this.scene, this.sound, this.effects);
     this.pickups = new PickupsManager(this.scene, this.sound);
     this.relays = new RelayManager(this.scene, this.sound);
+
+    this.cameraFrustum = new THREE.Frustum();
+    this.projScreenMatrix = new THREE.Matrix4();
 
     this.dialogue = new Dialogue(this.sound);
     this.missionManager = new MissionManager(this);
@@ -758,6 +791,10 @@ export class Game {
       if (noiseBar) noiseBar.style.width = `${Math.round(this.noise * 100)}%`;
       if (noiseText) noiseText.textContent = `${Math.round(this.noise * 100)}%`;
 
+      this.projScreenMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+      this.cameraFrustum.setFromProjectionMatrix(this.projScreenMatrix);
+
+      const pPos = this.player.mesh.position;
       for (let i = this.zombies.length - 1; i >= 0; i--) {
         const z = this.zombies[i];
         if (z.isRemoved) {
@@ -769,6 +806,13 @@ export class Game {
           continue;
         }
         z.update(dt, this.player, this.shift.isNight, this.city.colliders);
+
+        // Throttle AnimationMixer / animation updates to frustum + 40-unit radius
+        const dist = z.mesh.position.distanceTo(pPos);
+        const inFrustum = this.cameraFrustum.containsPoint(z.mesh.position);
+        if (inFrustum && dist < 40) {
+          z.updateAnimation(dt);
+        }
       }
 
       if (this.player.health <= 0) {

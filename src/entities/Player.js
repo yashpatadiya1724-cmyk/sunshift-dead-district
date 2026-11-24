@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { events } from '../core/Events.js';
+import { assets } from '../core/Assets.js';
 
 export class Player {
   constructor(scene, camera, input, sound, effects) {
@@ -43,52 +44,65 @@ export class Player {
 
     this.camRaycaster = new THREE.Raycaster();
 
-    // Build Stylized Rig
-    this.mesh = new THREE.Group();
+    // Instance Character Hierarchy
+    const characterInstance = assets.getInstance('player');
+    if (characterInstance) {
+      this.mesh = characterInstance;
+      this.leftArm = this.mesh.getObjectByName('leftArm') || this.createLimb(-0.55, 1.15, 0);
+      this.rightArm = this.mesh.getObjectByName('rightArm') || this.createLimb(0.55, 1.15, 0);
+      this.leftLeg = this.mesh.getObjectByName('leftLeg') || this.createLimb(-0.24, 0.48, 0);
+      this.rightLeg = this.mesh.getObjectByName('rightLeg') || this.createLimb(0.24, 0.48, 0);
+    } else {
+      this.mesh = new THREE.Group();
+      this.buildDefaultRig();
+    }
 
-    // Torso
+    // Attach 3D Weapon Model to Right Hand
+    this.weaponMesh = null;
+    this.updateHandWeaponModel();
+
+    this.mesh.position.set(0, 0, 0);
+    this.scene.add(this.mesh);
+
+    this.yaw = 0;
+    this.pitch = 0.2;
+
+    this.setupInputListeners();
+    this.emitWeaponState();
+  }
+
+  createLimb(x, y, z) {
+    const limb = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.85, 0.24),
+      new THREE.MeshStandardMaterial({ color: 0x1b356e, roughness: 0.7 })
+    );
+    limb.position.set(x, y, z);
+    limb.castShadow = true;
+    this.mesh.add(limb);
+    return limb;
+  }
+
+  buildDefaultRig() {
     const bodyGeo = new THREE.BoxGeometry(0.8, 1.1, 0.45);
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x224488 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x224488, roughness: 0.7, metalness: 0.1 });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.position.y = 1.15;
     body.castShadow = true;
     body.receiveShadow = true;
     this.mesh.add(body);
 
-    // Head
     const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-    const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.8 });
     const head = new THREE.Mesh(headGeo, headMat);
     head.position.y = 1.95;
     head.castShadow = true;
     this.mesh.add(head);
 
-    // Limbs
-    const limbMat = new THREE.MeshLambertMaterial({ color: 0x1b356e });
-    const armGeo = new THREE.BoxGeometry(0.24, 0.85, 0.24);
+    this.leftArm = this.createLimb(-0.55, 1.15, 0);
+    this.rightArm = this.createLimb(0.55, 1.15, 0);
 
-    this.leftArm = new THREE.Mesh(armGeo, limbMat);
-    this.leftArm.position.set(-0.55, 1.15, 0);
-    this.leftArm.castShadow = true;
-    this.mesh.add(this.leftArm);
-
-    this.rightArm = new THREE.Mesh(armGeo, limbMat);
-    this.rightArm.position.set(0.55, 1.15, 0);
-    this.rightArm.castShadow = true;
-    this.mesh.add(this.rightArm);
-
-    // 3D Weapon Model Attached to Right Arm
-    this.weaponMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.12, 0.22, 0.4),
-      new THREE.MeshLambertMaterial({ color: 0x444444 })
-    );
-    this.weaponMesh.position.set(0, -0.4, 0.25);
-    this.weaponMesh.castShadow = true;
-    this.rightArm.add(this.weaponMesh);
-
-    // Legs
-    const pantsMat = new THREE.MeshLambertMaterial({ color: 0x22262d });
     const legGeo = new THREE.BoxGeometry(0.28, 0.95, 0.28);
+    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x22262d, roughness: 0.85 });
 
     this.leftLeg = new THREE.Mesh(legGeo, pantsMat);
     this.leftLeg.position.set(-0.24, 0.48, 0);
@@ -99,37 +113,23 @@ export class Player {
     this.rightLeg.position.set(0.24, 0.48, 0);
     this.rightLeg.castShadow = true;
     this.mesh.add(this.rightLeg);
-
-    this.mesh.position.set(0, 0, 0);
-    this.scene.add(this.mesh);
-
-    this.yaw = 0;
-    this.pitch = 0.2;
-
-    this.setupInputListeners();
-    this.updateHandWeaponModel();
-    this.emitWeaponState();
   }
 
   setupInputListeners() {
     window.addEventListener('keydown', (e) => {
-      // Weapon selection 1, 2, 3
       if (e.code === 'Digit1') this.switchWeapon(0);
       if (e.code === 'Digit2') this.switchWeapon(1);
       if (e.code === 'Digit3') this.switchWeapon(2);
 
-      // Manual reload [R]
       if (e.code === 'KeyR') {
         this.startReload();
       }
 
-      // UV Flare [Q]
       if (e.code === 'KeyQ') {
         this.triggerFlare();
       }
     });
 
-    // Mouse wheel weapon cycle
     window.addEventListener('wheel', (e) => {
       if (this.input.isLocked) {
         if (e.deltaY > 0) {
@@ -174,16 +174,29 @@ export class Player {
 
   updateHandWeaponModel() {
     const w = this.getCurrentWeapon();
-    this.rightArm.remove(this.weaponMesh);
-    if (this.weaponMesh.geometry) this.weaponMesh.geometry.dispose();
+    if (this.weaponMesh && this.rightArm) {
+      this.rightArm.remove(this.weaponMesh);
+    }
 
-    this.weaponMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(w.size[0], w.size[1], w.size[2]),
-      new THREE.MeshLambertMaterial({ color: w.color })
-    );
-    this.weaponMesh.position.set(0, -0.35, w.size[2] * 0.5);
-    this.weaponMesh.castShadow = true;
-    this.rightArm.add(this.weaponMesh);
+    const assetId = w.name.toLowerCase().includes('pistol') ? 'weapon_pistol'
+                  : w.name.toLowerCase().includes('shotgun') ? 'weapon_shotgun'
+                  : 'weapon_rifle';
+
+    const modelInstance = assets.getInstance(assetId);
+    if (modelInstance) {
+      this.weaponMesh = modelInstance;
+      this.weaponMesh.position.set(0, -0.38, 0.22);
+      this.weaponMesh.rotation.set(0, 0, 0);
+      this.rightArm.add(this.weaponMesh);
+    } else {
+      this.weaponMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(w.size[0], w.size[1], w.size[2]),
+        new THREE.MeshStandardMaterial({ color: w.color, roughness: 0.35, metalness: 0.8 })
+      );
+      this.weaponMesh.position.set(0, -0.35, w.size[2] * 0.5);
+      this.weaponMesh.castShadow = true;
+      this.rightArm.add(this.weaponMesh);
+    }
   }
 
   startReload() {
@@ -210,7 +223,6 @@ export class Player {
   heal(amount) {
     this.health = Math.min(this.maxHealth, this.health + amount);
 
-    // If health recovers above 25, clear low-health visual filter and heartbeat sound
     if (this.health > 25) {
       if (this.effects) this.effects.setLowHealthEffect(false);
       if (this.sound) this.sound.setLowHealthHeartbeat(false);
@@ -243,32 +255,31 @@ export class Player {
     this.flareCooldownTimer = 0;
     this.isReloading = false;
 
-    // Reset weapons ammo
     this.weaponList = [
       { ...CONFIG.weapons.pistol, magAmmo: CONFIG.weapons.pistol.magSize },
       { ...CONFIG.weapons.shotgun, magAmmo: CONFIG.weapons.shotgun.magSize },
       { ...CONFIG.weapons.rifle, magAmmo: CONFIG.weapons.rifle.magSize }
     ];
+    this.unlockedWeapons = { pistol: true, shotgun: false, rifle: false };
     this.currentWeaponIndex = 0;
     this.updateHandWeaponModel();
-    this.emitWeaponState();
 
     if (this.effects) this.effects.setLowHealthEffect(false);
     if (this.sound) this.sound.setLowHealthHeartbeat(false);
 
-    const bar = document.getElementById('health-bar');
-    if (bar) bar.style.width = '100%';
+    this.emitWeaponState();
   }
 
   triggerFlare() {
-    if (this.flareCooldownTimer > 0 || this.health <= 0) return;
-    this.flareCooldownTimer = CONFIG.player.flareCooldown;
+    if (this.flareCooldownTimer > 0) return;
 
-    if (this.sound) this.sound.flarePulse();
+    this.flareCooldownTimer = CONFIG.player.flareCooldown;
     if (this.effects) {
-      this.effects.spawnSpark(this.mesh.position);
-      this.effects.addShake(0.3);
-      this.effects.showBanner('UV FLARE DEPLOYED!', '#6ec6ff');
+      this.effects.spawnShockwave(this.mesh.position, CONFIG.player.flareRadius);
+    }
+    if (this.sound) {
+      if (typeof this.sound.playFlare === 'function') this.sound.playFlare();
+      else if (typeof this.sound.flarePulse === 'function') this.sound.flarePulse();
     }
 
     events.emit('flareTriggered', {
@@ -278,163 +289,182 @@ export class Player {
     });
   }
 
-  update(dt, cityColliders, zombies, cityMeshes) {
-    // 1. Mouse Look with Invert Y
-    const mouseDelta = this.input.consumeMouseDelta();
-    this.yaw -= mouseDelta.x * this.sensitivity;
-    const ySign = this.invertY ? -1 : 1;
-    this.pitch -= mouseDelta.y * this.sensitivity * ySign;
-    this.pitch = Math.max(-0.4, Math.min(0.8, this.pitch));
+  takeDamage(amount, sourcePos) {
+    if (this.health <= 0) return;
 
-    // 2. Jump
+    this.health = Math.max(0, this.health - amount);
+
+    if (this.effects) {
+      this.effects.flashDamage();
+      this.effects.addShake(0.25);
+      if (sourcePos && typeof this.effects.showDamageArc === 'function') {
+        this.effects.showDamageArc(this.mesh.position, sourcePos, this.yaw);
+      }
+    }
+    if (this.sound) {
+      if (typeof this.sound.playHurt === 'function') this.sound.playHurt();
+      else if (typeof this.sound.playerHurt === 'function') this.sound.playerHurt();
+    }
+
+    if (this.health <= 25 && this.health > 0) {
+      if (this.effects) this.effects.setLowHealthEffect(true);
+      if (this.sound) this.sound.setLowHealthHeartbeat(true);
+    }
+
+    events.emit('playerHit', { health: this.health, maxHealth: this.maxHealth });
+
+    if (this.health <= 0) {
+      this.die();
+    }
+  }
+
+  die() {
+    if (this.sound) {
+      if (typeof this.sound.playDeath === 'function') this.sound.playDeath();
+      else if (typeof this.sound.playerDeath === 'function') this.sound.playerDeath();
+      this.sound.setLowHealthHeartbeat(false);
+    }
+    if (this.effects) {
+      this.effects.setLowHealthEffect(false);
+    }
+    events.emit('playerDied');
+  }
+
+  update(dt, cityColliders, zombies) {
+    if (this.health <= 0) return;
+
+    if (this.flareCooldownTimer > 0) {
+      this.flareCooldownTimer -= dt;
+      events.emit('flareCooldown', {
+        cooldown: Math.max(0, this.flareCooldownTimer),
+        total: CONFIG.player.flareCooldown
+      });
+    }
+
+    if (this.shootTimer > 0) this.shootTimer -= dt;
+
+    if (this.isReloading) {
+      this.reloadTimer -= dt;
+      this.emitWeaponState();
+      if (this.reloadTimer <= 0) {
+        this.finishReload();
+      }
+    }
+
+    this.handleMouseLook();
+    this.handleMovement(dt, cityColliders);
+
+    const isFiring = (typeof this.input.isMouseDown === 'function' ? this.input.isMouseDown() : this.input.mouse?.isDown);
+    if (isFiring && this.input.isLocked) {
+      this.shoot(zombies);
+    }
+
+    this.updateCamera(dt, cityColliders);
+  }
+
+  finishReload() {
+    const w = this.getCurrentWeapon();
+    const needed = w.magSize - w.magAmmo;
+    const available = (w.reserveAmmo === Infinity) ? needed : Math.min(needed, w.reserveAmmo);
+
+    w.magAmmo += available;
+    if (w.reserveAmmo !== Infinity) {
+      w.reserveAmmo -= available;
+    }
+
+    this.isReloading = false;
+    this.emitWeaponState();
+  }
+
+  handleMouseLook() {
+    if (!this.input.isLocked) return;
+
+    const delta = typeof this.input.consumeMouseDelta === 'function'
+      ? this.input.consumeMouseDelta()
+      : { x: this.input.mouse?.deltaX || 0, y: this.input.mouse?.deltaY || 0 };
+
+    this.yaw -= delta.x * this.sensitivity;
+    const invertMultiplier = this.invertY ? -1 : 1;
+    this.pitch += delta.y * this.sensitivity * invertMultiplier;
+    this.pitch = Math.max(-0.6, Math.min(1.1, this.pitch));
+  }
+
+  handleMovement(dt, colliders) {
+    const moveX = (this.input.isKey('KeyD') ? 1 : 0) - (this.input.isKey('KeyA') ? 1 : 0);
+    const moveZ = (this.input.isKey('KeyS') ? 1 : 0) - (this.input.isKey('KeyW') ? 1 : 0);
+
+    const isMoving = moveX !== 0 || moveZ !== 0;
+    const isSprinting = this.input.isKey('ShiftLeft') || this.input.isKey('ShiftRight');
+    const curSpeed = this.speed * (isSprinting ? this.sprintMultiplier : 1.0);
+
+    if (isMoving) {
+      const moveVec = new THREE.Vector3(moveX, 0, moveZ).normalize();
+      moveVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+      moveVec.multiplyScalar(curSpeed * dt);
+
+      this.moveWithCollision(moveVec, colliders);
+
+      this.walkTimer += dt * (isSprinting ? 12 : 7);
+      const swing = Math.sin(this.walkTimer) * (isSprinting ? 0.7 : 0.4);
+      if (this.leftLeg) this.leftLeg.rotation.x = swing;
+      if (this.rightLeg) this.rightLeg.rotation.x = -swing;
+      if (this.leftArm) this.leftArm.rotation.x = -swing;
+      if (this.rightArm) this.rightArm.rotation.x = swing * 0.3;
+
+      if (this.isGrounded && this.sound) {
+        if (Math.sin(this.walkTimer) > 0.9) {
+          this.sound.playFootstep();
+        }
+      }
+    } else {
+      if (this.leftLeg) this.leftLeg.rotation.x = THREE.MathUtils.lerp(this.leftLeg.rotation.x, 0, 0.1);
+      if (this.rightLeg) this.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rightLeg.rotation.x, 0, 0.1);
+      if (this.leftArm) this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0, 0.1);
+    }
+
     if (this.input.isKey('Space') && this.isGrounded) {
       this.velocityY = this.jumpStrength;
       this.isGrounded = false;
     }
 
-    this.velocityY += this.gravity * dt;
-    this.mesh.position.y += this.velocityY * dt;
+    if (!this.isGrounded) {
+      this.velocityY -= this.gravity * dt;
+      this.mesh.position.y += this.velocityY * dt;
 
-    if (this.mesh.position.y <= 0) {
-      this.mesh.position.y = 0;
-      this.velocityY = 0;
-      this.isGrounded = true;
-    }
-
-    // 3. Movement with X/Z Wall Sliding
-    let moveZ = 0;
-    let moveX = 0;
-    if (this.input.isKey('KeyW')) moveZ -= 1;
-    if (this.input.isKey('KeyS')) moveZ += 1;
-    if (this.input.isKey('KeyA')) moveX -= 1;
-    if (this.input.isKey('KeyD')) moveX += 1;
-
-    const moveVector = new THREE.Vector3(moveX, 0, moveZ).normalize();
-    const isSprinting = this.input.isKey('ShiftLeft') || this.input.isKey('ShiftRight');
-    const currentSpeed = this.speed * (isSprinting ? this.sprintMultiplier : 1.0);
-
-    const isMoving = moveVector.lengthSq() > 0;
-    if (isMoving) {
-      moveVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
-      const step = moveVector.multiplyScalar(currentSpeed * dt);
-
-      const testPosX = this.mesh.position.clone();
-      testPosX.x += step.x;
-      if (!this.checkCollisions(testPosX, cityColliders)) {
-        this.mesh.position.x = testPosX.x;
-      }
-
-      const testPosZ = this.mesh.position.clone();
-      testPosZ.z += step.z;
-      if (!this.checkCollisions(testPosZ, cityColliders)) {
-        this.mesh.position.z = testPosZ.z;
-      }
-
-      this.mesh.rotation.y = this.yaw + Math.PI;
-
-      // Leg swing & Footsteps
-      this.walkTimer += dt * (isSprinting ? 14 : 9);
-      const swing = Math.sin(this.walkTimer) * 0.65;
-      this.leftLeg.rotation.x = swing;
-      this.rightLeg.rotation.x = -swing;
-      this.leftArm.rotation.x = -swing * 0.7;
-      this.rightArm.rotation.x = swing * 0.7;
-
-      if (Math.abs(swing) > 0.6 && this.isGrounded && this.sound) {
-        this.sound.playFootstep();
-      }
-    } else {
-      this.leftLeg.rotation.x = THREE.MathUtils.lerp(this.leftLeg.rotation.x, 0, 0.2);
-      this.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rightLeg.rotation.x, 0, 0.2);
-      this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0, 0.2);
-      this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, 0, 0.2);
-    }
-
-    // 4. Camera Follow with Wall Raycast Occlusion Avoidance
-    const headPos = this.mesh.position.clone();
-    headPos.y += 1.6;
-
-    const shakeOffset = this.effects ? this.effects.getShakeOffset(dt) : { x: 0, y: 0 };
-    const idealOffset = new THREE.Vector3(
-      Math.sin(this.yaw) * Math.cos(this.pitch) * this.camDistance,
-      Math.sin(this.pitch) * this.camDistance + 0.3,
-      Math.cos(this.yaw) * Math.cos(this.pitch) * this.camDistance
-    );
-
-    const idealCamPos = headPos.clone().add(idealOffset);
-    const camDir = idealOffset.clone().normalize();
-    this.camRaycaster.set(headPos, camDir);
-    this.camRaycaster.far = this.camDistance;
-
-    const hits = this.camRaycaster.intersectObjects(cityMeshes, false);
-    let actualDist = this.camDistance;
-    if (hits.length > 0) {
-      actualDist = Math.max(1.0, hits[0].distance - 0.35);
-    }
-
-    const finalCamPos = headPos.clone().addScaledVector(camDir, actualDist);
-    finalCamPos.x += shakeOffset.x;
-    finalCamPos.y += shakeOffset.y;
-
-    this.camera.position.copy(finalCamPos);
-    this.camera.lookAt(headPos.x, headPos.y - 0.1, headPos.z);
-
-    // 5. Flare Cooldown Tick
-    if (this.flareCooldownTimer > 0) {
-      this.flareCooldownTimer = Math.max(0, this.flareCooldownTimer - dt);
-      const cdPct = (1 - this.flareCooldownTimer / CONFIG.player.flareCooldown) * 100;
-      const bar = document.getElementById('flare-cd-bar');
-      const txt = document.getElementById('flare-status-txt');
-      if (bar) bar.style.width = `${cdPct}%`;
-      if (txt) txt.innerText = this.flareCooldownTimer > 0 ? `${Math.ceil(this.flareCooldownTimer)}s` : 'READY';
-    }
-
-    // 6. Reload Timer Tick
-    if (this.isReloading) {
-      this.reloadTimer -= dt;
-      this.emitWeaponState();
-      if (this.reloadTimer <= 0) {
-        this.isReloading = false;
-        const w = this.getCurrentWeapon();
-        const needed = w.magSize - w.magAmmo;
-        const transfer = Math.min(needed, w.reserveAmmo);
-        w.magAmmo += transfer;
-        if (w.reserveAmmo !== Infinity) {
-          w.reserveAmmo -= transfer;
-        }
-        this.emitWeaponState();
+      if (this.mesh.position.y <= 0) {
+        this.mesh.position.y = 0;
+        this.velocityY = 0;
+        this.isGrounded = true;
       }
     }
 
-    // 7. Weapon Firing Logic (Auto vs Semi-Auto)
-    this.shootTimer -= dt;
-    const w = this.getCurrentWeapon();
+    this.mesh.rotation.y = this.yaw;
+  }
 
-    if (this.input.mouse.isDown && this.shootTimer <= 0 && !this.isReloading) {
-      if (w.magAmmo > 0) {
-        this.shoot(zombies, cityMeshes);
-        w.magAmmo--;
-        this.shootTimer = w.fireRate;
-        this.emitWeaponState();
+  moveWithCollision(moveVec, colliders) {
+    if (!colliders || colliders.length === 0) {
+      this.mesh.position.add(moveVec);
+      return;
+    }
 
-        // If semi-auto, consume click
-        if (!w.auto) {
-          this.input.mouse.isDown = false;
-        }
-      } else {
-        // Auto-reload on empty trigger
-        this.startReload();
-      }
+    const testX = this.mesh.position.x + moveVec.x;
+    if (!this.checkCollisions(testX, this.mesh.position.z, colliders)) {
+      this.mesh.position.x = testX;
+    }
+
+    const testZ = this.mesh.position.z + moveVec.z;
+    if (!this.checkCollisions(this.mesh.position.x, testZ, colliders)) {
+      this.mesh.position.z = testZ;
     }
   }
 
-  checkCollisions(pos, colliders) {
-    const radius = 0.5;
+  checkCollisions(x, z, colliders) {
+    const playerRadius = 0.45;
     for (let i = 0; i < colliders.length; i++) {
       const box = colliders[i];
       if (
-        pos.x > box.min.x - radius && pos.x < box.max.x + radius &&
-        pos.z > box.min.z - radius && pos.z < box.max.z + radius
+        x > box.min.x - playerRadius && x < box.max.x + playerRadius &&
+        z > box.min.z - playerRadius && z < box.max.z + playerRadius
       ) {
         return true;
       }
@@ -442,73 +472,110 @@ export class Player {
     return false;
   }
 
-  shoot(zombies, cityMeshes = []) {
+  shoot(zombies) {
     const w = this.getCurrentWeapon();
-    events.emit('playerShot', { weapon: w.name });
+    if (this.shootTimer > 0 || this.isReloading) return;
 
-    // Trigger weapon-specific audio
+    if (w.magAmmo <= 0) {
+      this.startReload();
+      return;
+    }
+
+    w.magAmmo--;
+    this.shootTimer = w.fireRate;
+    this.emitWeaponState();
+
     if (this.sound) {
-      if (w.name === 'SHOTGUN') this.sound.shotgunBlast();
-      else if (w.name === 'ASSAULT RIFLE') this.sound.rifleShot();
-      else this.sound.gunshot();
+      if (w.name.toLowerCase().includes('shotgun')) this.sound.playShotgun();
+      else if (w.name.toLowerCase().includes('rifle')) this.sound.playRifle();
+      else this.sound.playGunshot();
     }
 
     if (this.effects) {
-      this.effects.addShake(w.name === 'SHOTGUN' ? 0.16 : 0.08);
-      const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
-      this.effects.spawnMuzzleFlash(this.mesh.position, forward);
+      this.effects.spawnMuzzleFlash(this.rightArm.position.clone().add(this.mesh.position));
+      this.effects.addShake(w.name.toLowerCase().includes('shotgun') ? 0.15 : 0.06);
     }
 
-    const activeZombies = zombies.filter(z => !z.isDead);
-    const activeZombieMeshes = activeZombies.map(z => z.mesh);
-    const candidateTargets = [...activeZombieMeshes, ...cityMeshes];
+    events.emit('shotFired', { weapon: w.name, noise: w.noise || 0.4 });
 
-    // Fire pellets (Shotgun = 6 pellets with spread; Pistol/Rifle = 1 pellet)
-    for (let p = 0; p < w.pellets; p++) {
-      const raycaster = new THREE.Raycaster();
-      const spreadX = (Math.random() - 0.5) * w.spread;
-      const spreadY = (Math.random() - 0.5) * w.spread;
-      raycaster.setFromCamera(new THREE.Vector2(spreadX, spreadY), this.camera);
-      raycaster.far = this.maxShootingRange;
+    const pellets = w.pellets || 1;
+    for (let p = 0; p < pellets; p++) {
+      this.performRaycastShot(w, zombies);
+    }
 
-      const intersects = raycaster.intersectObjects(candidateTargets, true);
-      if (intersects.length > 0) {
-        const closestHit = intersects[0];
-        const hitZombie = activeZombies.find(
-          z => z.mesh === closestHit.object || z.mesh.children.includes(closestHit.object)
-        );
+    if (w.magAmmo <= 0) {
+      this.startReload();
+    }
+  }
 
-        if (hitZombie) {
-          hitZombie.takeDamage(w.damage);
-          if (this.effects) this.effects.spawnBlood(closestHit.point);
-        } else {
-          if (this.effects) this.effects.spawnSpark(closestHit.point);
+  performRaycastShot(weapon, zombies) {
+    const spread = weapon.spread || 0;
+    const rayDir = new THREE.Vector3(
+      (Math.random() - 0.5) * spread,
+      (Math.random() - 0.5) * spread,
+      -1
+    );
+
+    rayDir.applyAxisAngle(new THREE.Vector3(1, 0, 0), -this.pitch);
+    rayDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+    rayDir.normalize();
+
+    const origin = this.mesh.position.clone();
+    origin.y += 1.6;
+
+    let closestZombie = null;
+    let closestDist = this.maxShootingRange;
+    let hitPoint = origin.clone().add(rayDir.clone().multiplyScalar(this.maxShootingRange));
+
+    if (zombies) {
+      for (let i = 0; i < zombies.length; i++) {
+        const z = zombies[i];
+        if (z.isDead || z.isRemoved) continue;
+
+        const toZ = z.mesh.position.clone().sub(origin);
+        toZ.y += 1.0;
+        const projection = toZ.dot(rayDir);
+
+        if (projection > 0 && projection < closestDist) {
+          const closestPointOnRay = origin.clone().add(rayDir.clone().multiplyScalar(projection));
+          const distToRay = closestPointOnRay.distanceTo(z.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0)));
+
+          const hitRadius = 0.7 * (z.archetype?.scale || 1.0);
+          if (distToRay < hitRadius) {
+            closestDist = projection;
+            closestZombie = z;
+            hitPoint = closestPointOnRay;
+          }
         }
+      }
+    }
+
+    if (this.effects) {
+      this.effects.spawnBulletTracer(origin, hitPoint);
+    }
+
+    if (closestZombie) {
+      closestZombie.takeDamage(weapon.damage);
+      if (this.effects) {
+        this.effects.spawnBlood(hitPoint);
       }
     }
   }
 
-  takeDamage(amount, fromPosition = null) {
-    this.health = Math.max(0, this.health - amount);
+  updateCamera(dt, colliders) {
+    const shoulderOffset = new THREE.Vector3(0.55, 1.65, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+    const targetLook = this.mesh.position.clone().add(shoulderOffset);
 
-    if (this.health <= 25 && this.health > 0) {
-      if (this.effects) this.effects.setLowHealthEffect(true);
-      if (this.sound) this.sound.setLowHealthHeartbeat(true);
-    }
+    const camOffset = new THREE.Vector3(0, 0, this.camDistance);
+    camOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), -this.pitch);
+    camOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
 
-    events.emit('playerHurt', {
-      amount,
-      from: fromPosition,
-      health: this.health
-    });
+    const desiredCamPos = targetLook.clone().add(camOffset);
 
-    if (this.sound) this.sound.playerHurt();
-    if (this.effects) {
-      this.effects.addShake(0.3);
-      this.effects.flashDamage();
-    }
+    this.camRaycaster.set(targetLook, camOffset.clone().normalize());
+    this.camRaycaster.far = this.camDistance;
 
-    const bar = document.getElementById('health-bar');
-    if (bar) bar.style.width = `${(this.health / this.maxHealth) * 100}%`;
+    this.camera.position.copy(desiredCamPos);
+    this.camera.lookAt(targetLook.clone().add(new THREE.Vector3(0, 0, -10).applyAxisAngle(new THREE.Vector3(1, 0, 0), -this.pitch).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw)));
   }
 }

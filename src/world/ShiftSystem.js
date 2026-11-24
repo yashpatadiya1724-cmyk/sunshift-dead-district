@@ -3,7 +3,7 @@ import { CONFIG } from '../config.js';
 import { events } from '../core/Events.js';
 
 export class ShiftSystem {
-  constructor(scene, dirLight, hemiLight, bloomPass, city, sound, effects) {
+  constructor(scene, dirLight, hemiLight, bloomPass, city, sound, effects, colorGradingPass = null, dayEnvMap = null, nightEnvMap = null) {
     this.scene = scene;
     this.dirLight = dirLight;
     this.hemiLight = hemiLight;
@@ -11,15 +11,18 @@ export class ShiftSystem {
     this.city = city;
     this.sound = sound;
     this.effects = effects;
+    this.colorGradingPass = colorGradingPass;
+    this.dayEnvMap = dayEnvMap;
+    this.nightEnvMap = nightEnvMap;
 
     this.isNight = false;
     this.cycleDuration = CONFIG?.shift?.cycleDuration ?? 30.0;
     this.timer = this.cycleDuration;
     this.lastWarningSec = -1;
 
-    // Day visual settings
-    this.dayFog = new THREE.Color(CONFIG?.shift?.dayFog ?? 0xd0e0e3);
-    this.dayFogDensity = CONFIG?.shift?.dayFogDensity ?? 0.012;
+    // Tuned Day visual settings (Atmospheric, crisp)
+    this.dayFog = new THREE.Color(0xb8d0e0);
+    this.dayFogDensity = 0.009;
     this.daySky = new THREE.Color(CONFIG?.shift?.daySky ?? 0x87ceeb);
     this.dayDirColor = new THREE.Color(CONFIG?.shift?.dayDirColor ?? 0xfffaed);
     this.dayDirIntensity = CONFIG?.shift?.dayDirIntensity ?? 1.4;
@@ -29,17 +32,17 @@ export class ShiftSystem {
     this.dayBloom = CONFIG?.shift?.dayBloom ?? 0.5;
     this.dayWindowGlow = CONFIG?.shift?.dayWindowGlow ?? 0.3;
 
-    // Night visual settings
-    this.nightFog = new THREE.Color(CONFIG?.shift?.nightFog ?? 0x1a0505);
-    this.nightFogDensity = CONFIG?.shift?.nightFogDensity ?? 0.020;
+    // Tuned Night visual settings (Blood Night horror)
+    this.nightFog = new THREE.Color(0x180406);
+    this.nightFogDensity = 0.021;
     this.nightSky = new THREE.Color(CONFIG?.shift?.nightSky ?? 0x0a0002);
     this.nightDirColor = new THREE.Color(CONFIG?.shift?.nightDirColor ?? 0xff2222);
-    this.nightDirIntensity = CONFIG?.shift?.nightDirIntensity ?? 0.4;
+    this.nightDirIntensity = CONFIG?.shift?.nightDirIntensity ?? 0.45;
     this.nightHemiSky = new THREE.Color(CONFIG?.shift?.nightHemiSky ?? 0x330005);
     this.nightHemiGround = new THREE.Color(CONFIG?.shift?.nightHemiGround ?? 0x150002);
     this.nightHemiIntensity = CONFIG?.shift?.nightHemiIntensity ?? 0.2;
-    this.nightBloom = CONFIG?.shift?.nightBloom ?? 1.0;
-    this.nightWindowGlow = CONFIG?.shift?.nightWindowGlow ?? 1.5;
+    this.nightBloom = CONFIG?.shift?.nightBloom ?? 1.1;
+    this.nightWindowGlow = CONFIG?.shift?.nightWindowGlow ?? 1.6;
 
     this.applyDayInstant();
   }
@@ -60,12 +63,19 @@ export class ShiftSystem {
     if (this.city) {
       this.city.setWindowGlow(this.dayWindowGlow, 1.0);
     }
+    if (this.dayEnvMap) {
+      this.scene.environment = this.dayEnvMap;
+    }
+    if (this.colorGradingPass) {
+      this.colorGradingPass.uniforms['uNightTint'].value = 0.0;
+      this.colorGradingPass.uniforms['uSaturation'].value = 1.15;
+    }
   }
 
   reset() {
     this.isNight = false;
     this.timer = this.cycleDuration;
-    this.lastWarningSec = -1; // Clear warning state
+    this.lastWarningSec = -1;
     const flashEl = document.getElementById('shift-flash');
     if (flashEl) flashEl.style.opacity = '0';
     this.applyDayInstant();
@@ -97,7 +107,6 @@ export class ShiftSystem {
       if (wholeSec !== this.lastWarningSec) {
         this.lastWarningSec = wholeSec;
 
-        // Beep audio
         if (this.sound) {
           if (typeof this.sound.shiftWarningBeep === 'function') {
             this.sound.shiftWarningBeep();
@@ -106,7 +115,6 @@ export class ShiftSystem {
           }
         }
 
-        // Screen edge pulse: red if night is coming, white if day is coming
         if (this.effects && typeof this.effects.pulseWarning === 'function') {
           this.effects.pulseWarning(!this.isNight);
         }
@@ -128,7 +136,7 @@ export class ShiftSystem {
   triggerShift() {
     this.isNight = !this.isNight;
     this.timer = this.cycleDuration;
-    this.lastWarningSec = -1; // Clear warning state
+    this.lastWarningSec = -1;
 
     // Notify all systems
     events.emit('shift', { isNight: this.isNight });
@@ -145,6 +153,12 @@ export class ShiftSystem {
       } else {
         this.effects.showBanner('DAWN BREAKS', '#ffcc00');
       }
+    }
+
+    if (this.isNight && this.nightEnvMap) {
+      this.scene.environment = this.nightEnvMap;
+    } else if (!this.isNight && this.dayEnvMap) {
+      this.scene.environment = this.dayEnvMap;
     }
 
     const icon = document.getElementById('shift-icon');
@@ -199,6 +213,22 @@ export class ShiftSystem {
 
     if (this.city) {
       this.city.setWindowGlow(targetGlow, k);
+    }
+
+    // Color Grading ShaderPass lerp
+    if (this.colorGradingPass) {
+      const targetTint = this.isNight ? 1.0 : 0.0;
+      const targetSat = this.isNight ? 0.85 : 1.15;
+      this.colorGradingPass.uniforms['uNightTint'].value = THREE.MathUtils.lerp(
+        this.colorGradingPass.uniforms['uNightTint'].value,
+        targetTint,
+        k
+      );
+      this.colorGradingPass.uniforms['uSaturation'].value = THREE.MathUtils.lerp(
+        this.colorGradingPass.uniforms['uSaturation'].value,
+        targetSat,
+        k
+      );
     }
   }
 }
