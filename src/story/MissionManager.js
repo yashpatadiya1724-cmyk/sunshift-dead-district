@@ -80,6 +80,10 @@ export class MissionManager {
     this.start();
   }
 
+  get currentMissionId() {
+    return this.getCurrentMission()?.id || 1;
+  }
+
   getCurrentMission() {
     return this.missions[this.currentMissionIndex] || null;
   }
