@@ -2,6 +2,7 @@
 import assert from 'node:assert';
 import { CONFIG } from '../src/config.js';
 import { EventBus } from '../src/core/Events.js';
+import { Input } from '../src/core/Input.js';
 
 console.log('🧪 Starting SUNSHIFT: Dead District Engine Test Suite...\n');
 
@@ -122,6 +123,64 @@ runTest('Shift system defines day/night cycle timings and environmental paramete
   assert(shift.nightExtraSpawns >= 0, 'Night spawns must be >= 0');
   assert(shift.dayFog !== undefined);
   assert(shift.nightFog !== undefined);
+});
+
+// ===== SUITE 3: INPUT SUBSYSTEM ARCHITECTURE =====
+console.log('\n--- Suite 3: Input Subsystem Architecture ---');
+
+runTest('Input tracks keyboard codes properly', () => {
+  const input = new Input();
+  assert.strictEqual(input.isKey('KeyW'), false);
+  input.keys['KeyW'] = true;
+  assert.strictEqual(input.isKey('KeyW'), true);
+  input.keys['KeyW'] = false;
+  assert.strictEqual(input.isKey('KeyW'), false);
+});
+
+runTest('Input consumes mouse deltas and resets movement accumulator', () => {
+  const input = new Input();
+  input.mouse.deltaX = 14.5;
+  input.mouse.deltaY = -8.2;
+  const delta = input.consumeMouseDelta();
+  assert.strictEqual(delta.x, 14.5);
+  assert.strictEqual(delta.y, -8.2);
+  assert.strictEqual(input.mouse.deltaX, 0);
+  assert.strictEqual(input.mouse.deltaY, 0);
+});
+
+runTest('Input reset clears all keys and mouse states', () => {
+  const input = new Input();
+  input.keys['Space'] = true;
+  input.mouse.isDown = true;
+  input.mouse.deltaX = 5;
+  input.reset();
+  assert.strictEqual(input.isKey('Space'), false);
+  assert.strictEqual(input.mouse.isDown, false);
+  assert.strictEqual(input.mouse.deltaX, 0);
+});
+
+// ===== SUITE 4: BALLISTICS & DPS METRICS =====
+console.log('\n--- Suite 4: Ballistics & DPS Calculations ---');
+
+runTest('Weapons have valid damage per second (DPS) curves', () => {
+  const { pistol, shotgun, rifle } = CONFIG.weapons;
+  const shotgunVolleyDamage = shotgun.damage * shotgun.pellets;
+  const rifleVolleyDamage = rifle.damage * rifle.pellets;
+  const pistolVolleyDamage = pistol.damage * pistol.pellets;
+
+  assert(shotgunVolleyDamage > pistolVolleyDamage, 'Shotgun full volley must deal more damage than single pistol bullet');
+  assert(shotgun.fireRate > rifle.fireRate, 'Rifle has lower shot delay (higher cyclic rate) than shotgun');
+  assert(rifle.magSize > shotgun.magSize, 'Rifle magazine capacity must exceed shotgun');
+  assert(shotgunVolleyDamage === 108, 'Shotgun volley is 6 pellets * 18 dmg = 108');
+});
+
+runTest('Enemy night speed surges behave correctly across archetypes', () => {
+  const { normal, runner, brute } = CONFIG.enemies;
+  const runnerSurge = runner.nightSpeed / runner.daySpeed;
+  const normalSurge = normal.nightSpeed / normal.daySpeed;
+  assert(runnerSurge >= 1.0, 'Runner must speed up at night');
+  assert(normalSurge >= 1.0, 'Normal zombie must speed up at night');
+  assert(runner.nightSpeed > normal.nightSpeed, 'Runner night speed must exceed normal zombie');
 });
 
 console.log('\n================================');

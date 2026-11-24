@@ -278,7 +278,7 @@ export class Vehicle {
       if (z.isDead) continue;
 
       const dist = this.mesh.position.distanceTo(z.mesh.position);
-      if (dist < 2.2) {
+      if (dist < 2.6) {
         z.takeDamage(999); // Instant crush
         if (this.effects) {
           this.effects.spawnBlood(z.mesh.position);

@@ -23,7 +23,6 @@ In *SUNSHIFT: Dead District*, the environment is destabilized by an accelerated 
 - **Night Shift (Blood Fog & Escalation):** Thick crimson fog rolls in, siren alarms sound, zombies mutate into rabid sprinters, and additional infected spawn in the district.
 - **Countdown Warning:** The last 5 seconds of every shift cycle trigger urgent audio beeps and rhythmic HUD warnings.
 - **UV Flare Shockwave:** Players can deploy a tactical ultraviolet flash (`[Q]`) that temporarily freezes all nearby infected in a blue stasis glow.
-- **Manual Frequency Shift:** Players can manually trigger an atmospheric pulse (`[T]`) to reverse the tide when cornered.
 
 ---
 
@@ -72,7 +71,6 @@ In *SUNSHIFT: Dead District*, the environment is destabilized by an accelerated 
 | **Shoot Weapon** | `Left Click` | Raycast weapon with muzzle flash and hit sparks |
 | **Sprint** | `Shift` (Hold) | 1.6x movement speed boost |
 | **Jump / Handbrake** | `Spacebar` | Jump on foot / Handbrake drift while driving |
-| **Manual Shift** | `T` | Force Day/Night cycle toggle |
 | **Toggle FPS Counter** | `F3` | Displays current framerate in top-left |
 | **Pause / Resume** | `Escape` | Releases mouse lock and opens pause menu |
 

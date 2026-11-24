@@ -161,8 +161,13 @@ export class Game {
       }
     });
 
-    // F3 -> Toggle FPS Counter / Space -> Advance tutorial
+    // F3 -> Toggle FPS Counter / Space -> Advance tutorial / T -> Dev Shift
     window.addEventListener('keydown', (e) => {
+      if (import.meta.env.DEV && e.code === 'KeyT') {
+        if (this.shift && this.state === GAME_STATES.PLAYING) {
+          this.shift.triggerShift();
+        }
+      }
       if (e.code === 'F3') {
         this.showFps = !this.showFps;
         if (this.fpsCounterEl) {
@@ -374,10 +379,6 @@ export class Game {
 
   fadeExtraNightZombies() {
     this.extraNightZombies.forEach(z => z.startDawnFade());
-    setTimeout(() => {
-      this.extraNightZombies = [];
-      this.zombies = this.zombies.filter(z => !z.isDead && !z.isFading);
-    }, 1500);
   }
 
   clearExtraNightZombies() {
@@ -612,8 +613,17 @@ export class Game {
       this.relays.update(dt, this.vehicle.isOccupied ? { mesh: { position: this.vehicle.mesh.position } } : this.player);
       this.city.updateStreetlights(activeEntityPos);
 
-      for (let i = 0; i < this.zombies.length; i++) {
-        this.zombies[i].update(dt, this.player, this.shift.isNight, this.city.colliders);
+      for (let i = this.zombies.length - 1; i >= 0; i--) {
+        const z = this.zombies[i];
+        if (z.isRemoved) {
+          this.zombies.splice(i, 1);
+          const extraIdx = this.extraNightZombies.indexOf(z);
+          if (extraIdx !== -1) {
+            this.extraNightZombies.splice(extraIdx, 1);
+          }
+          continue;
+        }
+        z.update(dt, this.player, this.shift.isNight, this.city.colliders);
       }
 
       if (this.player.health <= 0) {

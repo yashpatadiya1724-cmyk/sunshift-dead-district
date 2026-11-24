@@ -17,6 +17,7 @@ export class Player {
     this.jumpStrength = CONFIG.player.jumpStrength;
     this.gravity = CONFIG.player.gravity;
     this.camDistance = CONFIG.player.camDistance;
+    this.maxShootingRange = CONFIG.player.maxShootingRange || 100;
     this.sensitivity = CONFIG.player.mouseSensitivity;
     this.invertY = false;
 

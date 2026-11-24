@@ -4,40 +4,44 @@ export class Input {
     this.mouse = { isDown: false, deltaX: 0, deltaY: 0 };
     this.isLocked = false;
 
-    window.addEventListener('keydown', (e) => {
-      this.keys[e.code] = true;
-    });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', (e) => {
+        this.keys[e.code] = true;
+      });
 
-    window.addEventListener('keyup', (e) => {
-      this.keys[e.code] = false;
-    });
+      window.addEventListener('keyup', (e) => {
+        this.keys[e.code] = false;
+      });
 
-    window.addEventListener('mousedown', (e) => {
-      // Do NOT request pointer lock here; Game.js handles lock on state transitions
-      if (this.isLocked && e.button === 0) {
-        this.mouse.isDown = true;
+      window.addEventListener('mousedown', (e) => {
+        // Do NOT request pointer lock here; Game.js handles lock on state transitions
+        if (this.isLocked && e.button === 0) {
+          this.mouse.isDown = true;
+        }
+      });
+
+      window.addEventListener('mouseup', (e) => {
+        if (e.button === 0) {
+          this.mouse.isDown = false;
+        }
+      });
+
+      if (typeof document !== 'undefined') {
+        document.addEventListener('pointerlockchange', () => {
+          this.isLocked = !!document.pointerLockElement;
+          if (!this.isLocked) {
+            this.mouse.isDown = false;
+          }
+        });
       }
-    });
 
-    window.addEventListener('mouseup', (e) => {
-      if (e.button === 0) {
-        this.mouse.isDown = false;
-      }
-    });
-
-    document.addEventListener('pointerlockchange', () => {
-      this.isLocked = !!document.pointerLockElement;
-      if (!this.isLocked) {
-        this.mouse.isDown = false;
-      }
-    });
-
-    window.addEventListener('mousemove', (e) => {
-      if (this.isLocked) {
-        this.mouse.deltaX = e.movementX || 0;
-        this.mouse.deltaY = e.movementY || 0;
-      }
-    });
+      window.addEventListener('mousemove', (e) => {
+        if (this.isLocked) {
+          this.mouse.deltaX = e.movementX || 0;
+          this.mouse.deltaY = e.movementY || 0;
+        }
+      });
+    }
   }
 
   isKey(code) {
