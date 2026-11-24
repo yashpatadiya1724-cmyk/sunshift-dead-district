@@ -11,6 +11,7 @@ export class Zombie {
     this.isNightSpawn = isNightSpawn;
     this.isFading = false;
     this.fadeAlpha = 1.0;
+    this.isRemoved = false;
 
     // Pick Archetype (Normal 60%, Runner 25%, Brute 15%) if not specified
     if (!archetype) {
@@ -148,7 +149,7 @@ export class Zombie {
   }
 
   update(dt, player, isNight, cityColliders) {
-    if (this.isDead) return;
+    if (this.isDead || this.isRemoved) return;
 
     // Handle Dawn Fade-Out for extra night zombies
     if (this.isFading) {
@@ -295,6 +296,9 @@ export class Zombie {
   }
 
   destroy() {
+    if (this.isRemoved) return;
+    this.isRemoved = true;
+
     // Unsubscribe from global event bus
     if (this.unsubscribeFlare) {
       this.unsubscribeFlare();
