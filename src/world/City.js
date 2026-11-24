@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ProceduralTextures } from './ProceduralTextures.js';
 
 export class City {
@@ -11,13 +12,14 @@ export class City {
     this.lightCones = [];
     this.streetlightPositions = [];
     this.streetLightsPool = [];
+    this.lightConeInstanced = null;
 
     this.procTextures = new ProceduralTextures(renderer);
     this.buildCity();
   }
 
   buildCity() {
-    // 1. Asphalt Ground with PBR Texture
+    // 1. Asphalt Ground with PBR Texture (Single Mesh, static)
     const asphalt = this.procTextures.getAsphaltTextures();
     asphalt.map.repeat.set(18, 18);
     asphalt.roughnessMap.repeat.set(18, 18);
@@ -33,29 +35,41 @@ export class City {
     const ground = new THREE.Mesh(groundGeo, this.groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
+    ground.matrixAutoUpdate = false;
+    ground.updateMatrix();
     this.scene.add(ground);
 
-    // 2. Yellow Dashed Road Lines
+    // 2. Yellow Dashed Road Lines (MERGED into 1 single BufferGeometry)
     const roadLineMat = new THREE.MeshStandardMaterial({
       color: 0xe0b020,
       roughness: 0.6,
       metalness: 0.1
     });
-    for (let i = -110; i <= 110; i += 12) {
-      const lineH = new THREE.Mesh(new THREE.PlaneGeometry(6, 0.45), roadLineMat);
-      lineH.rotation.x = -Math.PI / 2;
-      lineH.position.set(i, 0.02, 0);
-      lineH.receiveShadow = true;
-      this.scene.add(lineH);
 
-      const lineV = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 6), roadLineMat);
-      lineV.rotation.x = -Math.PI / 2;
-      lineV.position.set(0, 0.02, i);
-      lineV.receiveShadow = true;
-      this.scene.add(lineV);
+    const roadGeos = [];
+    for (let i = -110; i <= 110; i += 12) {
+      const gH = new THREE.PlaneGeometry(6, 0.45);
+      gH.rotateX(-Math.PI / 2);
+      gH.translate(i, 0.02, 0);
+      roadGeos.push(gH);
+
+      const gV = new THREE.PlaneGeometry(0.45, 6);
+      gV.rotateX(-Math.PI / 2);
+      gV.translate(0, 0.02, i);
+      roadGeos.push(gV);
     }
 
-    // 3. Sidewalks and Buildings with PBR Textures
+    if (roadGeos.length > 0) {
+      const mergedRoadGeo = BufferGeometryUtils.mergeGeometries(roadGeos, false);
+      const roadLinesMesh = new THREE.Mesh(mergedRoadGeo, roadLineMat);
+      roadLinesMesh.receiveShadow = true;
+      roadLinesMesh.castShadow = false; // Never cast shadows on road lines
+      roadLinesMesh.matrixAutoUpdate = false;
+      roadLinesMesh.updateMatrix();
+      this.scene.add(roadLinesMesh);
+    }
+
+    // 3. Sidewalks and Buildings
     const sidewalk = this.procTextures.getSidewalkTextures();
     sidewalk.map.repeat.set(2, 2);
     sidewalk.roughnessMap.repeat.set(2, 2);
@@ -72,10 +86,51 @@ export class City {
     const concrete = this.procTextures.getConcreteTextures();
     const windows = this.procTextures.getWindowTextures();
 
+    // Prepare shared materials for Brick vs Concrete buildings with window emissive maps
+    brick.map.repeat.set(2, 3);
+    brick.roughnessMap.repeat.set(2, 3);
+    windows.emissiveMap.repeat.set(1.5, 3);
+
+    const brickBuildingMat = new THREE.MeshStandardMaterial({
+      map: brick.map,
+      roughnessMap: brick.roughnessMap,
+      roughness: 0.75,
+      metalness: 0.12,
+      emissiveMap: windows.emissiveMap,
+      emissive: 0xffcc44,
+      emissiveIntensity: 0.15
+    });
+    this.windowMaterials.push(brickBuildingMat);
+
+    concrete.map.repeat.set(2, 3);
+    concrete.roughnessMap.repeat.set(2, 3);
+
+    const concreteBuildingMat = new THREE.MeshStandardMaterial({
+      map: concrete.map,
+      roughnessMap: concrete.roughnessMap,
+      roughness: 0.80,
+      metalness: 0.12,
+      emissiveMap: windows.emissiveMap,
+      emissive: 0xffcc44,
+      emissiveIntensity: 0.15
+    });
+    this.windowMaterials.push(concreteBuildingMat);
+
+    const ledgeMat = new THREE.MeshStandardMaterial({
+      color: 0x33373d,
+      roughness: 0.7,
+      metalness: 0.2
+    });
+
     const blockSize = 14;
     const halfCity = 60;
 
-    // Collect positions for InstancedMesh rooftop details
+    const sidewalkGeos = [];
+    const brickGeos = [];
+    const concreteGeos = [];
+    const ledgeGeos = [];
+
+    // Rooftop InstancedMesh matrices
     const acTransforms = [];
     const tankTransforms = [];
 
@@ -83,65 +138,44 @@ export class City {
       for (let z = -halfCity; z <= halfCity; z += 22) {
         if (Math.abs(x) < 15 && Math.abs(z) < 15) continue;
 
-        // Sidewalk Base
-        const swMesh = new THREE.Mesh(new THREE.BoxGeometry(blockSize + 3.5, 0.35, blockSize + 3.5), sidewalkMat);
-        swMesh.position.set(x, 0.175, z);
-        swMesh.receiveShadow = true;
-        this.scene.add(swMesh);
+        // Sidewalk Geometry (Merged)
+        const swGeo = new THREE.BoxGeometry(blockSize + 3.5, 0.35, blockSize + 3.5);
+        swGeo.translate(x, 0.175, z);
+        sidewalkGeos.push(swGeo);
 
-        // Building
+        // Building Dimensions
         const height = 12 + Math.random() * 22;
         const useBrick = Math.random() > 0.45;
-        const baseTexture = useBrick ? brick : concrete;
 
-        const texCopy = baseTexture.map.clone();
-        texCopy.repeat.set(2, Math.max(1, height / 8));
-        texCopy.needsUpdate = true;
+        const bGeo = new THREE.BoxGeometry(blockSize, height, blockSize);
+        bGeo.translate(x, height / 2 + 0.35, z);
 
-        const roughCopy = baseTexture.roughnessMap.clone();
-        roughCopy.repeat.set(2, Math.max(1, height / 8));
-        roughCopy.needsUpdate = true;
+        if (useBrick) {
+          brickGeos.push(bGeo);
+        } else {
+          concreteGeos.push(bGeo);
+        }
 
-        const winTex = windows.emissiveMap.clone();
-        winTex.repeat.set(1.5, Math.max(1, height / 6));
-        winTex.needsUpdate = true;
+        // Store bounding box for physics collision
+        const box = new THREE.Box3(
+          new THREE.Vector3(x - blockSize / 2, 0, z - blockSize / 2),
+          new THREE.Vector3(x + blockSize / 2, height + 0.35, z + blockSize / 2)
+        );
+        this.colliders.push(box);
 
-        const bMat = new THREE.MeshStandardMaterial({
-          map: texCopy,
-          roughnessMap: roughCopy,
-          roughness: useBrick ? 0.75 : 0.80,
-          metalness: 0.12,
-          emissiveMap: winTex,
-          emissive: 0xffcc44,
-          emissiveIntensity: 0.15
-        });
-        this.windowMaterials.push(bMat);
+        // Roof Ledge Geometry (Merged)
+        const ledgeGeo = new THREE.BoxGeometry(blockSize + 0.6, 0.5, blockSize + 0.6);
+        ledgeGeo.translate(x, height + 0.35, z);
+        ledgeGeos.push(ledgeGeo);
 
-        const bMesh = new THREE.Mesh(new THREE.BoxGeometry(blockSize, height, blockSize), bMat);
-        bMesh.position.set(x, height / 2 + 0.35, z);
-        bMesh.castShadow = true;
-        bMesh.receiveShadow = true;
-        this.scene.add(bMesh);
-
-        this.meshes.push(bMesh);
-        this.colliders.push(new THREE.Box3().setFromObject(bMesh));
-
-        // Cornice / Roof Ledge Detail
-        const ledgeMat = new THREE.MeshStandardMaterial({ color: 0x33373d, roughness: 0.7, metalness: 0.2 });
-        const ledge = new THREE.Mesh(new THREE.BoxGeometry(blockSize + 0.6, 0.5, blockSize + 0.6), ledgeMat);
-        ledge.position.set(x, height + 0.35, z);
-        ledge.castShadow = true;
-        ledge.receiveShadow = true;
-        this.scene.add(ledge);
-
-        // Prepare Instanced Rooftop AC matrix
+        // Instanced Rooftop AC matrix
         const dummy = new THREE.Object3D();
         dummy.position.set(x + (Math.random() - 0.5) * 4, height + 1.15, z + (Math.random() - 0.5) * 4);
         dummy.rotation.y = (Math.floor(Math.random() * 4) * Math.PI) / 2;
         dummy.updateMatrix();
         acTransforms.push(dummy.matrix.clone());
 
-        // Prepare Instanced Rooftop Water Tank matrix (50% buildings)
+        // Instanced Rooftop Water Tank (50% buildings)
         if (Math.random() > 0.4) {
           dummy.position.set(x + (Math.random() - 0.5) * 3, height + 2.4, z + (Math.random() - 0.5) * 3);
           dummy.rotation.y = Math.random() * Math.PI;
@@ -151,7 +185,53 @@ export class City {
       }
     }
 
-    // 4. InstancedMesh for Rooftop AC Units (Draw call optimization)
+    // Merge Sidewalks -> 1 Mesh
+    if (sidewalkGeos.length > 0) {
+      const mergedSidewalkGeo = BufferGeometryUtils.mergeGeometries(sidewalkGeos, false);
+      const swMesh = new THREE.Mesh(mergedSidewalkGeo, sidewalkMat);
+      swMesh.receiveShadow = true;
+      swMesh.castShadow = false;
+      swMesh.matrixAutoUpdate = false;
+      swMesh.updateMatrix();
+      this.scene.add(swMesh);
+    }
+
+    // Merge Brick Buildings -> 1 Mesh
+    if (brickGeos.length > 0) {
+      const mergedBrickGeo = BufferGeometryUtils.mergeGeometries(brickGeos, false);
+      const brickMesh = new THREE.Mesh(mergedBrickGeo, brickBuildingMat);
+      brickMesh.castShadow = true;
+      brickMesh.receiveShadow = true;
+      brickMesh.matrixAutoUpdate = false;
+      brickMesh.updateMatrix();
+      this.scene.add(brickMesh);
+      this.meshes.push(brickMesh);
+    }
+
+    // Merge Concrete Buildings -> 1 Mesh
+    if (concreteGeos.length > 0) {
+      const mergedConcreteGeo = BufferGeometryUtils.mergeGeometries(concreteGeos, false);
+      const concreteMesh = new THREE.Mesh(mergedConcreteGeo, concreteBuildingMat);
+      concreteMesh.castShadow = true;
+      concreteMesh.receiveShadow = true;
+      concreteMesh.matrixAutoUpdate = false;
+      concreteMesh.updateMatrix();
+      this.scene.add(concreteMesh);
+      this.meshes.push(concreteMesh);
+    }
+
+    // Merge Cornices / Roof Ledges -> 1 Mesh
+    if (ledgeGeos.length > 0) {
+      const mergedLedgeGeo = BufferGeometryUtils.mergeGeometries(ledgeGeos, false);
+      const ledgeMesh = new THREE.Mesh(mergedLedgeGeo, ledgeMat);
+      ledgeMesh.castShadow = true;
+      ledgeMesh.receiveShadow = true;
+      ledgeMesh.matrixAutoUpdate = false;
+      ledgeMesh.updateMatrix();
+      this.scene.add(ledgeMesh);
+    }
+
+    // 4. InstancedMesh for Rooftop AC Units
     if (acTransforms.length > 0) {
       const acGeo = new THREE.BoxGeometry(2.2, 1.3, 2.2);
       const acMat = new THREE.MeshStandardMaterial({ color: 0x5a6068, roughness: 0.65, metalness: 0.4 });
@@ -162,12 +242,14 @@ export class City {
         acInstanced.setMatrixAt(i, acTransforms[i]);
       }
       acInstanced.instanceMatrix.needsUpdate = true;
+      acInstanced.matrixAutoUpdate = false;
+      acInstanced.updateMatrix();
       this.scene.add(acInstanced);
     }
 
     // 5. InstancedMesh for Rooftop Water Tanks
     if (tankTransforms.length > 0) {
-      const tankGeo = new THREE.CylinderGeometry(1.4, 1.4, 2.6, 12);
+      const tankGeo = new THREE.CylinderGeometry(1.4, 1.4, 2.6, 10);
       const tankMat = new THREE.MeshStandardMaterial({ color: 0x8a6242, roughness: 0.8, metalness: 0.1 });
       const tankInstanced = new THREE.InstancedMesh(tankGeo, tankMat, tankTransforms.length);
       tankInstanced.castShadow = true;
@@ -176,23 +258,71 @@ export class City {
         tankInstanced.setMatrixAt(i, tankTransforms[i]);
       }
       tankInstanced.instanceMatrix.needsUpdate = true;
+      tankInstanced.matrixAutoUpdate = false;
+      tankInstanced.updateMatrix();
       this.scene.add(tankInstanced);
     }
 
-    // 6. Streetlights with Transparent Light-Cone Meshes
+    // 6. Streetlights with InstancedMeshes
     this.createStreetlights();
 
-    // 7. Abandoned Cars (PBR)
+    // 7. Abandoned Cars (PBR, Merged by part)
     this.createAbandonedCars();
 
-    // 8. Barricades & Crates (PBR)
+    // 8. Barricades & Crates (Merged)
     this.createBarricadesAndCrates();
   }
 
   createStreetlights() {
+    const coords = [-33, -11, 11, 33];
+    const poleTransforms = [];
+    const lampTransforms = [];
+    const coneTransforms = [];
+
+    const dummy = new THREE.Object3D();
+
+    coords.forEach(x => {
+      coords.forEach(z => {
+        if (Math.abs(x) < 14 && Math.abs(z) < 14) return;
+        const posX = x + 8.5;
+        const posZ = z + 8.5;
+
+        // Pole
+        dummy.position.set(posX, 3, posZ);
+        dummy.rotation.set(0, 0, 0);
+        dummy.updateMatrix();
+        poleTransforms.push(dummy.matrix.clone());
+
+        // Lamp
+        dummy.position.set(posX, 6.0, posZ);
+        dummy.updateMatrix();
+        lampTransforms.push(dummy.matrix.clone());
+
+        // Light Cone
+        dummy.position.set(posX, 3.25, posZ);
+        dummy.updateMatrix();
+        coneTransforms.push(dummy.matrix.clone());
+
+        this.streetlightPositions.push(new THREE.Vector3(posX, 5.8, posZ));
+      });
+    });
+
+    const count = poleTransforms.length;
+
+    // 1. Instanced Poles
     const poleGeo = new THREE.CylinderGeometry(0.12, 0.16, 6, 8);
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x24282f, roughness: 0.6, metalness: 0.7 });
+    const poleInstanced = new THREE.InstancedMesh(poleGeo, poleMat, count);
+    poleInstanced.castShadow = false; // Poles are thin, skip shadow map
+    for (let i = 0; i < count; i++) {
+      poleInstanced.setMatrixAt(i, poleTransforms[i]);
+    }
+    poleInstanced.instanceMatrix.needsUpdate = true;
+    poleInstanced.matrixAutoUpdate = false;
+    poleInstanced.updateMatrix();
+    this.scene.add(poleInstanced);
 
+    // 2. Instanced Lamps
     const lampGeo = new THREE.BoxGeometry(0.65, 0.35, 0.65);
     const lampMat = new THREE.MeshStandardMaterial({
       color: 0xffaa33,
@@ -200,44 +330,34 @@ export class City {
       emissiveIntensity: 2.0,
       roughness: 0.3
     });
+    const lampInstanced = new THREE.InstancedMesh(lampGeo, lampMat, count);
+    for (let i = 0; i < count; i++) {
+      lampInstanced.setMatrixAt(i, lampTransforms[i]);
+    }
+    lampInstanced.instanceMatrix.needsUpdate = true;
+    lampInstanced.matrixAutoUpdate = false;
+    lampInstanced.updateMatrix();
+    this.scene.add(lampInstanced);
 
-    // Transparent light-cone mesh underneath lamp
-    const coneGeo = new THREE.CylinderGeometry(0.35, 3.4, 5.5, 16, 1, true);
-    const coneMat = new THREE.MeshBasicMaterial({
+    // 3. Instanced Transparent Light Cones
+    const coneGeo = new THREE.CylinderGeometry(0.35, 3.4, 5.5, 12, 1, true);
+    this.coneMat = new THREE.MeshBasicMaterial({
       color: 0xffaa33,
       transparent: true,
       opacity: 0.10,
       depthWrite: false,
       side: THREE.DoubleSide
     });
+    this.lightConeInstanced = new THREE.InstancedMesh(coneGeo, this.coneMat, count);
+    for (let i = 0; i < count; i++) {
+      this.lightConeInstanced.setMatrixAt(i, coneTransforms[i]);
+    }
+    this.lightConeInstanced.instanceMatrix.needsUpdate = true;
+    this.lightConeInstanced.matrixAutoUpdate = false;
+    this.lightConeInstanced.updateMatrix();
+    this.scene.add(this.lightConeInstanced);
 
-    const coords = [-33, -11, 11, 33];
-    coords.forEach(x => {
-      coords.forEach(z => {
-        if (Math.abs(x) < 14 && Math.abs(z) < 14) return;
-        const group = new THREE.Group();
-        group.position.set(x + 8.5, 0, z + 8.5);
-
-        const pole = new THREE.Mesh(poleGeo, poleMat);
-        pole.position.y = 3;
-        pole.castShadow = true;
-        group.add(pole);
-
-        const lamp = new THREE.Mesh(lampGeo, lampMat);
-        lamp.position.y = 6.0;
-        group.add(lamp);
-
-        const cone = new THREE.Mesh(coneGeo, coneMat);
-        cone.position.y = 3.25;
-        group.add(cone);
-        this.lightCones.push(cone);
-
-        this.scene.add(group);
-        this.streetlightPositions.push(new THREE.Vector3(x + 8.5, 5.8, z + 8.5));
-      });
-    });
-
-    // 6 dynamic point lights pooled for closest streetlights
+    // Dynamic point lights pool (Pre-allocated 6 in scene to prevent shader recompilation)
     for (let i = 0; i < 6; i++) {
       const pl = new THREE.PointLight(0xffaa33, 0, 16, 1.8);
       this.scene.add(pl);
@@ -246,50 +366,74 @@ export class City {
   }
 
   createAbandonedCars() {
-    const carColors = [0x992222, 0x224488, 0x666b73, 0x2d4f34];
-    for (let i = 0; i < 12; i++) {
-      const group = new THREE.Group();
+    const bodyGeos = [];
+    const cabinGeos = [];
 
+    const dummy = new THREE.Object3D();
+
+    for (let i = 0; i < 12; i++) {
       const onXRoad = Math.random() > 0.5;
       const x = onXRoad ? (Math.random() - 0.5) * 110 : (Math.floor(Math.random() * 4) - 1.5) * 22;
       const z = !onXRoad ? (Math.random() - 0.5) * 110 : (Math.floor(Math.random() * 4) - 1.5) * 22;
 
       if (Math.abs(x) < 10 && Math.abs(z) < 10) continue;
 
-      group.position.set(x, 0, z);
-      group.rotation.y = Math.random() * Math.PI * 2;
+      const rotY = Math.random() * Math.PI * 2;
 
+      // Body Geometry
+      const bGeo = new THREE.BoxGeometry(2.4, 0.75, 4.2);
+      bGeo.translate(0, 0.5, 0);
+      bGeo.rotateY(rotY);
+      bGeo.translate(x, 0, z);
+      bodyGeos.push(bGeo);
+
+      // Cabin Geometry
+      const cGeo = new THREE.BoxGeometry(2.1, 0.75, 2.3);
+      cGeo.translate(0, 1.15, -0.2);
+      cGeo.rotateY(rotY);
+      cGeo.translate(x, 0, z);
+      cabinGeos.push(cGeo);
+
+      // Collider Box
+      const box = new THREE.Box3(
+        new THREE.Vector3(x - 1.8, 0, z - 1.8),
+        new THREE.Vector3(x + 1.8, 1.8, z + 1.8)
+      );
+      this.colliders.push(box);
+    }
+
+    if (bodyGeos.length > 0) {
       const bodyMat = new THREE.MeshStandardMaterial({
-        color: carColors[i % carColors.length],
-        roughness: 0.5,
-        metalness: 0.7
+        color: 0x556677,
+        roughness: 0.55,
+        metalness: 0.6
       });
+      const mergedBody = BufferGeometryUtils.mergeGeometries(bodyGeos, false);
+      const carBodyMesh = new THREE.Mesh(mergedBody, bodyMat);
+      carBodyMesh.castShadow = true;
+      carBodyMesh.receiveShadow = true;
+      carBodyMesh.matrixAutoUpdate = false;
+      carBodyMesh.updateMatrix();
+      this.scene.add(carBodyMesh);
+      this.meshes.push(carBodyMesh);
+
       const cabinMat = new THREE.MeshStandardMaterial({
         color: 0x14181f,
         roughness: 0.3,
         metalness: 0.9
       });
-
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.75, 4.2), bodyMat);
-      body.position.y = 0.5;
-      body.castShadow = true;
-      body.receiveShadow = true;
-      group.add(body);
-
-      const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.75, 2.3), cabinMat);
-      cabin.position.set(0, 1.15, -0.2);
-      cabin.castShadow = true;
-      group.add(cabin);
-
-      this.scene.add(group);
-      this.meshes.push(body);
-      this.colliders.push(new THREE.Box3().setFromObject(group));
+      const mergedCabin = BufferGeometryUtils.mergeGeometries(cabinGeos, false);
+      const carCabinMesh = new THREE.Mesh(mergedCabin, cabinMat);
+      carCabinMesh.castShadow = true;
+      carCabinMesh.matrixAutoUpdate = false;
+      carCabinMesh.updateMatrix();
+      this.scene.add(carCabinMesh);
     }
   }
 
   createBarricadesAndCrates() {
-    const crateMat = new THREE.MeshStandardMaterial({ color: 0x7a5230, roughness: 0.85, metalness: 0.05 });
-    const barrierMat = new THREE.MeshStandardMaterial({ color: 0x827d75, roughness: 0.75, metalness: 0.2 });
+    const crateGeos = [];
+    const barrierGeos = [];
 
     for (let i = 0; i < 15; i++) {
       const angle = (i / 15) * Math.PI * 2;
@@ -300,22 +444,51 @@ export class City {
       if (this.isInsideBuilding(x, z, 3)) continue;
 
       const isCrate = i % 2 === 0;
-      let mesh;
-
       if (isCrate) {
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), crateMat);
-        mesh.position.set(x, 0.8, z);
-      } else {
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(3.5, 1.2, 0.7), barrierMat);
-        mesh.position.set(x, 0.6, z);
-        mesh.rotation.y = Math.random() * Math.PI;
-      }
+        const cGeo = new THREE.BoxGeometry(1.6, 1.6, 1.6);
+        cGeo.translate(x, 0.8, z);
+        crateGeos.push(cGeo);
 
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.scene.add(mesh);
-      this.meshes.push(mesh);
-      this.colliders.push(new THREE.Box3().setFromObject(mesh));
+        this.colliders.push(new THREE.Box3(
+          new THREE.Vector3(x - 0.9, 0, z - 0.9),
+          new THREE.Vector3(x + 0.9, 1.7, z + 0.9)
+        ));
+      } else {
+        const rotY = Math.random() * Math.PI;
+        const bGeo = new THREE.BoxGeometry(3.5, 1.2, 0.7);
+        bGeo.rotateY(rotY);
+        bGeo.translate(x, 0.6, z);
+        barrierGeos.push(bGeo);
+
+        this.colliders.push(new THREE.Box3(
+          new THREE.Vector3(x - 1.8, 0, z - 1.8),
+          new THREE.Vector3(x + 1.8, 1.3, z + 1.8)
+        ));
+      }
+    }
+
+    if (crateGeos.length > 0) {
+      const crateMat = new THREE.MeshStandardMaterial({ color: 0x7a5230, roughness: 0.85, metalness: 0.05 });
+      const mergedCrates = BufferGeometryUtils.mergeGeometries(crateGeos, false);
+      const cratesMesh = new THREE.Mesh(mergedCrates, crateMat);
+      cratesMesh.castShadow = true;
+      cratesMesh.receiveShadow = true;
+      cratesMesh.matrixAutoUpdate = false;
+      cratesMesh.updateMatrix();
+      this.scene.add(cratesMesh);
+      this.meshes.push(cratesMesh);
+    }
+
+    if (barrierGeos.length > 0) {
+      const barrierMat = new THREE.MeshStandardMaterial({ color: 0x827d75, roughness: 0.75, metalness: 0.2 });
+      const mergedBarriers = BufferGeometryUtils.mergeGeometries(barrierGeos, false);
+      const barriersMesh = new THREE.Mesh(mergedBarriers, barrierMat);
+      barriersMesh.castShadow = true;
+      barriersMesh.receiveShadow = true;
+      barriersMesh.matrixAutoUpdate = false;
+      barriersMesh.updateMatrix();
+      this.scene.add(barriersMesh);
+      this.meshes.push(barriersMesh);
     }
   }
 
@@ -323,22 +496,37 @@ export class City {
     this.windowMaterials.forEach(mat => {
       mat.emissiveIntensity = intensity;
     });
-    this.lightCones.forEach(cone => {
-      cone.material.opacity = coneOpacity;
-    });
+    if (this.coneMat) {
+      this.coneMat.opacity = coneOpacity;
+    }
   }
 
-  updateStreetlights(targetPos) {
+  setLightConesVisible(visible) {
+    if (this.lightConeInstanced) {
+      this.lightConeInstanced.visible = !!visible;
+    }
+  }
+
+  updateStreetlights(targetPos, maxLights = 6) {
     if (!targetPos) return;
+
+    if (maxLights <= 0) {
+      for (let i = 0; i < this.streetLightsPool.length; i++) {
+        this.streetLightsPool[i].intensity = 0;
+      }
+      return;
+    }
 
     const sorted = [...this.streetlightPositions].sort((a, b) => {
       return a.distanceToSquared(targetPos) - b.distanceToSquared(targetPos);
     });
 
     for (let i = 0; i < this.streetLightsPool.length; i++) {
-      if (i < sorted.length) {
+      if (i < maxLights && i < sorted.length) {
         this.streetLightsPool[i].position.copy(sorted[i]);
         this.streetLightsPool[i].intensity = 3.5;
+      } else {
+        this.streetLightsPool[i].intensity = 0;
       }
     }
   }

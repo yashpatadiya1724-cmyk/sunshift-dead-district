@@ -40,14 +40,20 @@ export class Atmosphere {
     this.scene.add(this.rainParticles);
   }
 
-  setShiftPhase(isNight, groundMat = null) {
+  setShiftPhase(isNight, groundMat = null, quality = 'HIGH') {
     this.isNight = isNight;
-    this.rainParticles.visible = isNight;
+    const allowRain = isNight && quality === 'HIGH';
+    this.rainParticles.visible = allowRain;
 
-    // Wet asphalt transition
+    // Wet asphalt transition (only in HIGH quality)
     if (groundMat) {
-      groundMat.roughness = isNight ? 0.36 : 0.85;
-      groundMat.metalness = isNight ? 0.30 : 0.08;
+      if (quality === 'HIGH') {
+        groundMat.roughness = isNight ? 0.36 : 0.85;
+        groundMat.metalness = isNight ? 0.30 : 0.08;
+      } else {
+        groundMat.roughness = 0.85;
+        groundMat.metalness = 0.08;
+      }
       groundMat.needsUpdate = true;
     }
   }

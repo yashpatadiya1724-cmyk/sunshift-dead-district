@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+const _flashPos = new THREE.Vector3();
+const _shakeObj = { x: 0, y: 0 };
+
 export class Effects {
   constructor(scene) {
     this.scene = scene;
@@ -25,9 +28,13 @@ export class Effects {
       });
     }
 
-    // Muzzle Flash
+    // Muzzle Flash PointLight (Pre-created to prevent runtime shader recompilation)
     this.muzzleLight = new THREE.PointLight(0xffaa22, 0, 10);
     this.scene.add(this.muzzleLight);
+
+    // Flare PointLight (Pre-created to prevent runtime shader recompilation)
+    this.flareLight = new THREE.PointLight(0x6ec6ff, 0, 24, 2.0);
+    this.scene.add(this.flareLight);
 
     const flashGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
     const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffaa });
@@ -42,26 +49,35 @@ export class Effects {
 
   getShakeOffset(dt) {
     this.shake = Math.max(0, this.shake - dt * 1.5);
-    return {
-      x: (Math.random() - 0.5) * this.shake,
-      y: (Math.random() - 0.5) * this.shake
-    };
+    _shakeObj.x = (Math.random() - 0.5) * this.shake;
+    _shakeObj.y = (Math.random() - 0.5) * this.shake;
+    return _shakeObj;
   }
 
   spawnMuzzleFlash(position, forward) {
-    const flashPos = position.clone().addScaledVector(forward, 0.8);
-    flashPos.y += 1.0;
+    _flashPos.copy(position).addScaledVector(forward, 0.8);
+    _flashPos.y += 1.0;
 
-    this.muzzleLight.position.copy(flashPos);
+    this.muzzleLight.position.copy(_flashPos);
     this.muzzleLight.intensity = 4.0;
 
-    this.flashMesh.position.copy(flashPos);
+    this.flashMesh.position.copy(_flashPos);
     this.flashMesh.visible = true;
 
     setTimeout(() => {
       this.muzzleLight.intensity = 0;
       this.flashMesh.visible = false;
     }, 50);
+  }
+
+  pulseFlareLight(position) {
+    this.flareLight.position.copy(position);
+    this.flareLight.position.y += 1.5;
+    this.flareLight.intensity = 5.0;
+
+    setTimeout(() => {
+      this.flareLight.intensity = 0;
+    }, 350);
   }
 
   // Pooled Blood Splatter

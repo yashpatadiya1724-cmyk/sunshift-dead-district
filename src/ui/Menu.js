@@ -213,10 +213,10 @@ export class Menu {
         const q = btn.dataset.quality;
         this.qualityBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        if (typeof this.game.applyQuality === 'function') {
+        if (typeof this.game.setQuality === 'function') {
+          this.game.setQuality(q, true);
+        } else if (typeof this.game.applyQuality === 'function') {
           this.game.applyQuality(q);
-        } else if (typeof this.game.setQuality === 'function') {
-          this.game.setQuality(q);
         }
       });
     });

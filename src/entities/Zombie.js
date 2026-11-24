@@ -2,7 +2,60 @@ import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { events } from '../core/Events.js';
 
+// Module-level scratch vectors to eliminate per-frame allocations
 const _tempTestPos = new THREE.Vector3();
+
+// Static shared geometries (allocated once, shared across all zombies)
+const _bodyGeo = new THREE.CapsuleGeometry(0.36, 0.65, 8, 10);
+const _headGeo = new THREE.SphereGeometry(0.26, 10, 10);
+const _eyeGeo = new THREE.SphereGeometry(0.045, 6, 6);
+const _armGeo = new THREE.CapsuleGeometry(0.11, 0.60, 5, 6);
+const _legGeo = new THREE.CapsuleGeometry(0.13, 0.68, 5, 6);
+
+// Static shared materials by archetype (allocated once, shared across all zombies)
+const _sharedMats = {
+  NORMAL: {
+    body: new THREE.MeshStandardMaterial({ color: 0x3d5236, roughness: 0.78, metalness: 0.05 }),
+    head: new THREE.MeshStandardMaterial({ color: 0x5a7d4a, roughness: 0.72, metalness: 0.05 }),
+    limb: new THREE.MeshStandardMaterial({ color: 0x3d5236, roughness: 0.78, metalness: 0.05 })
+  },
+  RUNNER: {
+    body: new THREE.MeshStandardMaterial({ color: 0x6a3830, roughness: 0.78, metalness: 0.05 }),
+    head: new THREE.MeshStandardMaterial({ color: 0x8e4c40, roughness: 0.72, metalness: 0.05 }),
+    limb: new THREE.MeshStandardMaterial({ color: 0x6a3830, roughness: 0.78, metalness: 0.05 })
+  },
+  BRUTE: {
+    body: new THREE.MeshStandardMaterial({ color: 0x29253d, roughness: 0.78, metalness: 0.05 }),
+    head: new THREE.MeshStandardMaterial({ color: 0x3f3659, roughness: 0.72, metalness: 0.05 }),
+    limb: new THREE.MeshStandardMaterial({ color: 0x29253d, roughness: 0.78, metalness: 0.05 })
+  },
+  EYE: new THREE.MeshStandardMaterial({
+    color: 0xff0000,
+    emissive: 0xff0000,
+    emissiveIntensity: 2.5,
+    roughness: 0.1,
+    metalness: 0.2
+  }),
+  PANTS: new THREE.MeshStandardMaterial({
+    color: 0x1c2419,
+    roughness: 0.85,
+    metalness: 0.05
+  }),
+  FREEZE_BODY: new THREE.MeshStandardMaterial({
+    color: 0x0088ff,
+    roughness: 0.78,
+    metalness: 0.1
+  }),
+  FREEZE_HEAD: new THREE.MeshStandardMaterial({
+    color: 0x6ec6ff,
+    roughness: 0.72,
+    metalness: 0.1
+  }),
+  FLASH_HEAD: new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.5
+  })
+};
 
 export class Zombie {
   constructor(scene, position, sound, archetype = null, isNightSpawn = false) {
@@ -12,6 +65,7 @@ export class Zombie {
     this.isFading = false;
     this.fadeAlpha = 1.0;
     this.isRemoved = false;
+    this.hasClonedMaterials = false;
 
     // Pick Archetype (Normal 60%, Runner 25%, Brute 15%) if not specified
     if (!archetype) {
@@ -26,6 +80,9 @@ export class Zombie {
     } else {
       this.archetype = archetype;
     }
+
+    this.typeKey = this.archetype.type || 'NORMAL';
+    this.archetypeMats = _sharedMats[this.typeKey] || _sharedMats.NORMAL;
 
     this.health = this.archetype.health;
     this.maxHealth = this.archetype.health;
@@ -42,106 +99,66 @@ export class Zombie {
     this.walkTimer = Math.random() * 10;
     this.frameCounter = Math.floor(Math.random() * 2);
 
-    // Build Natural PBR Rig scaled by Archetype
+    // Build Natural PBR Rig scaled by Archetype using shared geometries & materials
     this.mesh = new THREE.Group();
 
-    // Torso (Capsule)
-    const bodyGeo = new THREE.CapsuleGeometry(0.36, 0.65, 8, 12);
-    this.bodyMat = new THREE.MeshStandardMaterial({
-      color: this.archetype.color,
-      roughness: 0.78,
-      metalness: 0.05,
-      transparent: true,
-      opacity: 1.0
-    });
-    const body = new THREE.Mesh(bodyGeo, this.bodyMat);
-    body.position.y = 1.05;
-    body.castShadow = true;
-    body.receiveShadow = true;
-    this.mesh.add(body);
+    // Torso (Capsule) - ONLY body casts shadow
+    this.bodyMesh = new THREE.Mesh(_bodyGeo, this.archetypeMats.body);
+    this.bodyMesh.position.y = 1.05;
+    this.bodyMesh.castShadow = true;
+    this.bodyMesh.receiveShadow = true;
+    this.mesh.add(this.bodyMesh);
 
     // Head (Sphere)
-    const headGeo = new THREE.SphereGeometry(0.26, 12, 12);
-    this.headMat = new THREE.MeshStandardMaterial({
-      color: this.archetype.headColor,
-      roughness: 0.72,
-      metalness: 0.05,
-      transparent: true,
-      opacity: 1.0
-    });
-    const head = new THREE.Mesh(headGeo, this.headMat);
-    head.position.y = 1.75;
-    head.castShadow = true;
-    this.mesh.add(head);
+    this.headMesh = new THREE.Mesh(_headGeo, this.archetypeMats.head);
+    this.headMesh.position.y = 1.75;
+    this.headMesh.castShadow = false; // Skip shadow pass for head to reduce draw calls
+    this.headMesh.receiveShadow = true;
+    this.mesh.add(this.headMesh);
 
     // Glowing Red Emissive Eyes (Spheres)
-    const eyeMat = new THREE.MeshStandardMaterial({
-      color: 0xff0000,
-      emissive: 0xff0000,
-      emissiveIntensity: 2.5,
-      roughness: 0.1,
-      metalness: 0.2
-    });
-    const eyeGeo = new THREE.SphereGeometry(0.045, 8, 8);
-
-    const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+    const leftEye = new THREE.Mesh(_eyeGeo, _sharedMats.EYE);
     leftEye.position.set(-0.11, 1.78, 0.22);
+    leftEye.castShadow = false;
     this.mesh.add(leftEye);
 
-    const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+    const rightEye = new THREE.Mesh(_eyeGeo, _sharedMats.EYE);
     rightEye.position.set(0.11, 1.78, 0.22);
+    rightEye.castShadow = false;
     this.mesh.add(rightEye);
 
     // Arms (Capsules)
-    this.limbMat = new THREE.MeshStandardMaterial({
-      color: this.archetype.color,
-      roughness: 0.78,
-      metalness: 0.05,
-      transparent: true,
-      opacity: 1.0
-    });
-    const armGeo = new THREE.CapsuleGeometry(0.11, 0.60, 6, 8);
-
-    this.leftArm = new THREE.Mesh(armGeo, this.limbMat);
+    this.leftArm = new THREE.Mesh(_armGeo, this.archetypeMats.limb);
     this.leftArm.position.set(-0.48, 1.25, 0.35);
     this.leftArm.rotation.x = -Math.PI / 2 + 0.1;
-    this.leftArm.castShadow = true;
+    this.leftArm.castShadow = false;
     this.mesh.add(this.leftArm);
 
-    this.rightArm = new THREE.Mesh(armGeo, this.limbMat);
+    this.rightArm = new THREE.Mesh(_armGeo, this.archetypeMats.limb);
     this.rightArm.position.set(0.48, 1.25, 0.35);
     this.rightArm.rotation.x = -Math.PI / 2 - 0.1;
-    this.rightArm.castShadow = true;
+    this.rightArm.castShadow = false;
     this.mesh.add(this.rightArm);
 
     // Legs (Capsules)
-    const legGeo = new THREE.CapsuleGeometry(0.13, 0.68, 6, 8);
-    this.pantsMat = new THREE.MeshStandardMaterial({
-      color: 0x1c2419,
-      roughness: 0.85,
-      metalness: 0.05,
-      transparent: true,
-      opacity: 1.0
-    });
-
-    this.leftLeg = new THREE.Mesh(legGeo, this.pantsMat);
+    this.leftLeg = new THREE.Mesh(_legGeo, _sharedMats.PANTS);
     this.leftLeg.position.set(-0.20, 0.45, 0);
-    this.leftLeg.castShadow = true;
+    this.leftLeg.castShadow = false;
     this.mesh.add(this.leftLeg);
 
-    this.rightLeg = new THREE.Mesh(legGeo, this.pantsMat);
+    this.rightLeg = new THREE.Mesh(_legGeo, _sharedMats.PANTS);
     this.rightLeg.position.set(0.20, 0.45, 0);
-    this.rightLeg.castShadow = true;
+    this.rightLeg.castShadow = false;
     this.mesh.add(this.rightLeg);
 
-    // Apply Archetype Scale Factor (Runner = 0.82, Normal = 1.0, Brute = 1.45)
+    // Apply Archetype Scale Factor
     const s = this.archetype.scale;
     this.mesh.scale.set(s, s, s);
 
     this.mesh.position.copy(position);
     this.scene.add(this.mesh);
 
-    // Listen for UV Flare Freeze shockwave with Unsubscribe handle
+    // Listen for UV Flare Freeze shockwave
     this.unsubscribeFlare = events.on('flareTriggered', ({ position, radius, duration }) => {
       if (this.isDead) return;
       if (this.mesh.position.distanceTo(position) <= radius) {
@@ -152,27 +169,39 @@ export class Zombie {
 
   freeze(duration) {
     this.frozenTimer = duration;
-    this.bodyMat.color.setHex(0x0088ff);
-    this.headMat.color.setHex(0x6ec6ff);
+    this.bodyMesh.material = _sharedMats.FREEZE_BODY;
+    this.headMesh.material = _sharedMats.FREEZE_HEAD;
   }
 
   startDawnFade() {
     if (this.isNightSpawn && !this.isDead) {
       this.isFading = true;
+      // Clone materials only when fading out opacity
+      if (!this.hasClonedMaterials) {
+        this.hasClonedMaterials = true;
+        this.mesh.traverse((child) => {
+          if (child.isMesh && child.material) {
+            child.material = child.material.clone();
+            child.material.transparent = true;
+          }
+        });
+      }
     }
   }
 
-  update(dt, player, isNight, cityColliders) {
+  update(dt, player, isNight, cityColliders, frustum = null) {
     if (this.isDead || this.isRemoved) return;
 
     // Handle Dawn Fade-Out for extra night zombies
     if (this.isFading) {
-      this.fadeAlpha -= dt * 0.7; // Fade over ~1.4 seconds
-      this.mesh.traverse((child) => {
-        if (child.isMesh && child.material) {
-          child.material.opacity = Math.max(0, this.fadeAlpha);
-        }
-      });
+      this.fadeAlpha -= dt * 0.7;
+      if (this.hasClonedMaterials) {
+        this.mesh.traverse((child) => {
+          if (child.isMesh && child.material) {
+            child.material.opacity = Math.max(0, this.fadeAlpha);
+          }
+        });
+      }
       if (this.fadeAlpha <= 0) {
         this.destroy();
         return;
@@ -183,8 +212,8 @@ export class Zombie {
     if (this.frozenTimer > 0) {
       this.frozenTimer -= dt;
       if (this.frozenTimer <= 0) {
-        this.bodyMat.color.setHex(this.archetype.color);
-        this.headMat.color.setHex(this.archetype.headColor);
+        this.bodyMesh.material = this.archetypeMats.body;
+        this.headMesh.material = this.archetypeMats.head;
       }
       return;
     }
@@ -193,9 +222,8 @@ export class Zombie {
     const dz = player.mesh.position.z - this.mesh.position.z;
     const horizontalDist = Math.sqrt(dx * dx + dz * dz);
 
-    // Distance LOD Optimization (>60m updates on alternate frames)
-    this.frameCounter++;
-    if (horizontalDist > 60 && this.frameCounter % 2 !== 0) {
+    // Requirement 9: Far (60+ unit) zombies skip mesh update and animation completely
+    if (horizontalDist > 60) {
       return;
     }
 
@@ -214,21 +242,17 @@ export class Zombie {
     const agroRange = isNight ? CONFIG.zombie.agroRangeNight : CONFIG.zombie.agroRangeDay;
 
     if (horizontalDist < agroRange && horizontalDist > this.attackDistance) {
-      let dirX = dx / horizontalDist;
-      let dirZ = dz / horizontalDist;
+      const dirX = dx / horizontalDist;
+      const dirZ = dz / horizontalDist;
 
-      let stepX = dirX * currentSpeed * dt;
-      let stepZ = dirZ * currentSpeed * dt;
-
-      let movedX = false;
-      let movedZ = false;
+      const stepX = dirX * currentSpeed * dt;
+      const stepZ = dirZ * currentSpeed * dt;
 
       // Test X movement
       _tempTestPos.copy(this.mesh.position);
       _tempTestPos.x += stepX;
       if (!this.checkCollisions(_tempTestPos, cityColliders)) {
         this.mesh.position.x = _tempTestPos.x;
-        movedX = true;
       }
 
       // Test Z movement
@@ -236,37 +260,34 @@ export class Zombie {
       _tempTestPos.z += stepZ;
       if (!this.checkCollisions(_tempTestPos, cityColliders)) {
         this.mesh.position.z = _tempTestPos.z;
-        movedZ = true;
       }
 
-      // Corner Avoidance: Tangent side-stepping around building edges
-      if (!movedX && movedZ) {
-        _tempTestPos.copy(this.mesh.position);
-        _tempTestPos.z += (dirZ >= 0 ? 1 : -1) * currentSpeed * 0.6 * dt;
-        if (!this.checkCollisions(_tempTestPos, cityColliders)) {
-          this.mesh.position.z = _tempTestPos.z;
-        }
-      } else if (!movedZ && movedX) {
-        _tempTestPos.copy(this.mesh.position);
-        _tempTestPos.x += (dirX >= 0 ? 1 : -1) * currentSpeed * 0.6 * dt;
-        if (!this.checkCollisions(_tempTestPos, cityColliders)) {
-          this.mesh.position.x = _tempTestPos.x;
-        }
+      // Face player
+      this.mesh.rotation.y = Math.atan2(dirX, dirZ);
+
+      // Frustum check: don't animate zombies outside camera frustum
+      const inView = frustum ? frustum.containsPoint(this.mesh.position) : true;
+      if (inView) {
+        this.walkTimer += dt * 8;
+        const swing = Math.sin(this.walkTimer) * 0.45;
+        this.leftLeg.rotation.x = swing;
+        this.rightLeg.rotation.x = -swing;
+        this.leftArm.rotation.x = -Math.PI / 2 + swing * 0.4;
+        this.rightArm.rotation.x = -Math.PI / 2 - swing * 0.4;
       }
+    } else {
+      // Idle reset
+      this.leftLeg.rotation.x = 0;
+      this.rightLeg.rotation.x = 0;
+    }
 
-      this.mesh.lookAt(player.mesh.position.x, this.mesh.position.y, player.mesh.position.z);
-
-      // Walk cycle animation
-      this.walkTimer += dt * (isNight ? 8 : 4.5);
-      const legSwing = Math.sin(this.walkTimer) * 0.55;
-      this.leftLeg.rotation.x = legSwing;
-      this.rightLeg.rotation.x = -legSwing;
-      this.mesh.rotation.z = Math.sin(this.walkTimer * 0.5) * 0.08;
-    } else if (horizontalDist <= this.attackDistance) {
+    // Attack Player Logic
+    if (horizontalDist <= this.attackDistance) {
       this.attackTimer -= dt;
       if (this.attackTimer <= 0) {
-        player.takeDamage(this.damage, this.mesh.position);
         this.attackTimer = this.attackCooldown;
+        player.takeDamage(this.damage, this.mesh.position);
+        if (this.sound) this.sound.zombieAttack();
       }
     }
   }
@@ -289,10 +310,10 @@ export class Zombie {
   takeDamage(amt) {
     this.health -= amt;
 
-    this.headMat.color.setHex(0xffffff);
+    this.headMesh.material = _sharedMats.FLASH_HEAD;
     setTimeout(() => {
-      if (this.headMat && !this.isDead) {
-        this.headMat.color.setHex(this.archetype.headColor);
+      if (this.headMesh && !this.isDead) {
+        this.headMesh.material = this.frozenTimer > 0 ? _sharedMats.FREEZE_HEAD : this.archetypeMats.head;
       }
     }, 80);
 
@@ -320,14 +341,15 @@ export class Zombie {
     }
 
     this.scene.remove(this.mesh);
-    this.mesh.traverse((child) => {
-      if (child.isMesh) {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
+
+    // Only dispose if this zombie cloned materials (e.g. dawn fade)
+    if (this.hasClonedMaterials) {
+      this.mesh.traverse((child) => {
+        if (child.isMesh && child.material) {
           if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
           else child.material.dispose();
         }
-      }
-    });
+      });
+    }
   }
 }

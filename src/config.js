@@ -86,6 +86,11 @@ export const CONFIG = {
   // Enemies & Zombie Mechanics
   zombie: {
     count: 20,
+    counts: {
+      LOW: 12,
+      MEDIUM: 16,
+      HIGH: 20
+    },
     attackDistance: 1.35,
     attackCooldown: 1.0,
     soundHearingRadius: 18.0,
@@ -161,7 +166,9 @@ export const CONFIG = {
       film: false,
       smaa: false,
       vignette: false,
-      pixelRatio: 1.0
+      pixelRatio: 0.85,
+      pointLights: 0,
+      lightCones: false
     },
     MEDIUM: {
       postProcessing: true,
@@ -170,20 +177,24 @@ export const CONFIG = {
       bloom: true,
       gtao: false,
       film: true,
-      smaa: true,
+      smaa: false,
       vignette: true,
-      pixelRatio: 1.0
+      pixelRatio: 1.0,
+      pointLights: 3,
+      lightCones: true
     },
     HIGH: {
       postProcessing: true,
       shadows: true,
-      shadowMapSize: 2048,
+      shadowMapSize: 1536,
       bloom: true,
-      gtao: true,
+      gtao: false,
       film: true,
       smaa: true,
       vignette: true,
-      pixelRatio: typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 1.5) : 1.0
+      pixelRatio: 1.0,
+      pointLights: 6,
+      lightCones: true
     }
   }
 };
