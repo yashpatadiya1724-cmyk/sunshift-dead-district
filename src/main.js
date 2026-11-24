@@ -1,8 +1,9 @@
+// FILE: src/main.js
 import { Game } from './core/Game.js';
 import { Menu } from './ui/Menu.js';
 import { HUD } from './ui/HUD.js';
 
-window.addEventListener('DOMContentLoaded', () => {
+function init() {
   // 1. Initialize Game engine
   const game = new Game();
 
@@ -16,15 +17,13 @@ window.addEventListener('DOMContentLoaded', () => {
   const hud = new HUD(game);
   const menu = new Menu(game);
 
-  // Hook HUD into the animation loop
-  const originalUpdate = game.update.bind(game);
-  game.update = (dt) => {
-    originalUpdate(dt);
-    if (game.state === 'PLAYING') {
-      hud.update(dt);
-    }
-  };
-
   // Expose game instance for debug/inspection if needed
   window.__SUNSHIFT_GAME__ = game;
-});
+}
+
+// Resilient initialization: execute immediately if DOM is already parsed
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}

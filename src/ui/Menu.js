@@ -1,3 +1,4 @@
+// FILE: src/ui/Menu.js
 import { events } from '../core/Events.js';
 
 export class Menu {
@@ -5,7 +6,7 @@ export class Menu {
     this.game = game;
 
     // Cache Panel Elements
-    this.container = document.getElementById('menu-container');
+    this.container = document.getElementById('menu-container') || document.getElementById('menu-layer');
     this.loadingScreen = document.getElementById('loading-screen');
     this.mainMenu = document.getElementById('main-menu');
     this.controlsPanel = document.getElementById('controls-panel');
@@ -53,8 +54,10 @@ export class Menu {
       if (p) {
         if (p === panel) {
           p.classList.remove('hidden-panel');
+          p.style.display = 'flex';
         } else {
           p.classList.add('hidden-panel');
+          p.style.display = 'none';
         }
       }
     });
@@ -114,7 +117,7 @@ export class Menu {
     if (this.sliderVolume) {
       this.sliderVolume.addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
-        this.game.settings.masterVolume = val;
+        this.game.settings.volume = val;
         if (this.game.sound) this.game.sound.setMasterVolume(val);
       });
     }
@@ -123,7 +126,7 @@ export class Menu {
     if (this.sliderSens) {
       this.sliderSens.addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
-        this.game.settings.mouseSensitivity = val;
+        this.game.settings.sensitivity = val;
         if (this.game.player) this.game.player.sensitivity = val;
       });
     }
@@ -157,17 +160,21 @@ export class Menu {
         const q = btn.dataset.quality;
         this.qualityBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        this.game.setQuality(q);
+        if (typeof this.game.applyQuality === 'function') {
+          this.game.applyQuality(q);
+        } else if (typeof this.game.setQuality === 'function') {
+          this.game.setQuality(q);
+        }
       });
     });
   }
 
   syncSettingsUI() {
-    if (this.sliderVolume && this.game.settings.masterVolume !== undefined) {
-      this.sliderVolume.value = this.game.settings.masterVolume;
+    if (this.sliderVolume && this.game.settings.volume !== undefined) {
+      this.sliderVolume.value = this.game.settings.volume;
     }
-    if (this.sliderSens && this.game.settings.mouseSensitivity !== undefined) {
-      this.sliderSens.value = this.game.settings.mouseSensitivity;
+    if (this.sliderSens && this.game.settings.sensitivity !== undefined) {
+      this.sliderSens.value = this.game.settings.sensitivity;
     }
     if (this.sliderFov && this.game.settings.fov !== undefined) {
       this.sliderFov.value = this.game.settings.fov;
@@ -183,7 +190,10 @@ export class Menu {
   }
 
   initEvents() {
-    events.on('stateChange', ({ state, stats }) => {
+    events.on('stateChange', (payload) => {
+      const state = typeof payload === 'string' ? payload : payload?.state;
+      const stats = (typeof payload === 'object' && payload?.stats) ? payload.stats : (this.game.stats || {});
+
       switch (state) {
         case 'MENU':
           this.showPanel(this.mainMenu);
@@ -192,6 +202,7 @@ export class Menu {
           this.showPanel(null); // Hide all menu overlays
           break;
         case 'PAUSE':
+        case 'PAUSED':
           this.showPanel(this.pauseMenu);
           break;
         case 'WIN':
@@ -215,7 +226,7 @@ export class Menu {
         : 'The infected overwhelmed your position.';
     }
 
-    const totalSeconds = Math.floor(stats.timeSurvived || 0);
+    const totalSeconds = Math.floor(stats.survivalTime || stats.timeSurvived || 0);
     const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
     const s = (totalSeconds % 60).toString().padStart(2, '0');
 
@@ -236,7 +247,6 @@ export class Menu {
 
       if (progress >= 1.0) {
         clearInterval(interval);
-        // Minimum 1 second showcase of loading screen before main menu
         setTimeout(() => {
           this.game.showMenu();
         }, 300);

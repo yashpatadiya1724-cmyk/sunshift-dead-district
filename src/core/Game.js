@@ -252,6 +252,8 @@ export class Game {
     this.saveSettings();
   }
 
+  setQuality(presetName) { this.applyQuality(presetName); }
+
   applyQuality(presetName) {
     const preset = CONFIG.quality[presetName] || CONFIG.quality.HIGH;
     this.settings.quality = presetName;

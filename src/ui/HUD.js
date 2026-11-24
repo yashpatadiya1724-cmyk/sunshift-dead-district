@@ -2,6 +2,8 @@ import { events } from '../core/Events.js';
 import { CONFIG } from '../config.js';
 
 export class HUD {
+  update(dt) {}
+
   constructor(game) {
     this.game = game;
 

@@ -477,7 +477,7 @@ body, html {
 /* =========================================
    MENUS & GLASSMORPHIC MODALS
    ========================================= */
-#menu-layer {
+#menu-layer, #menu-container {
   position: fixed;
   top: 0;
   left: 0;
@@ -757,3 +757,5 @@ body, html {
   background: #ffaa00;
   box-shadow: 0 0 8px #ffaa00;
 }
+
+.hidden-panel { display: none !important; }
