@@ -88,6 +88,10 @@ export class Sound {
   }
 
   // Mechanical Weapon Reload SFX (Called immediately when reload starts)
+  reload() {
+    this.playReload();
+  }
+
   playReload() {
     this.ensureContext();
     const t = this.ctx.currentTime;

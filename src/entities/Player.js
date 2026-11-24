@@ -221,7 +221,10 @@ export class Player {
 
     this.isReloading = true;
     this.reloadTimer = w.reloadTime;
-    if (this.sound) this.sound.reload();
+    if (this.sound) {
+      if (typeof this.sound.reload === 'function') this.sound.reload();
+      else if (typeof this.sound.playReload === 'function') this.sound.playReload();
+    }
     this.emitWeaponState();
   }
 
@@ -461,7 +464,18 @@ export class Player {
     }
   }
 
-  checkCollisions(x, z, colliders) {
+  checkCollisions(xOrPos, zOrColliders, maybeColliders) {
+    let x, z, colliders;
+    if (xOrPos && typeof xOrPos === 'object') {
+      x = xOrPos.x;
+      z = xOrPos.z;
+      colliders = zOrColliders || [];
+    } else {
+      x = xOrPos;
+      z = zOrColliders;
+      colliders = maybeColliders || [];
+    }
+    if (!Array.isArray(colliders)) return false;
     const playerRadius = 0.45;
     for (let i = 0; i < colliders.length; i++) {
       const box = colliders[i];
@@ -613,6 +627,8 @@ export class Player {
   }
 
   die() {
+    this.health = 0;
+    this.isDead = true;
     if (this.sound) {
       this.sound.setLowHealthHeartbeat(false);
       if (typeof this.sound.playerDeath === 'function') {
