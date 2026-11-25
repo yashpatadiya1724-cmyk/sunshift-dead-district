@@ -26,11 +26,9 @@ export class Input {
         if (e.button === 2) this.mouse.isRightDown = false;
       });
 
-      // Prevent right-click context menu during gameplay
+      // Prevent right-click context menu during gameplay and UI interaction
       window.addEventListener('contextmenu', (e) => {
-        if (this.isLocked) {
-          e.preventDefault();
-        }
+        e.preventDefault();
       });
 
       if (typeof document !== 'undefined') {
