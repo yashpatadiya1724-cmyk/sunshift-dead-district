@@ -250,6 +250,7 @@ export class Game {
 
     this.zombies = [];
     this.extraNightZombies = [];
+    this.spawnQueue = [];
 
     const isAutoInit = (this.settings.qualityMode === 'AUTO');
     this.applyQuality(this.settings.quality, isAutoInit);
@@ -603,6 +604,7 @@ export class Game {
       if (zombie && zombie.mesh && this.pickups) {
         this.pickups.spawnDrop(zombie.mesh.position);
       }
+      this.processSpawnQueue();
     });
 
     // 2. Day/Night Shift Escalation
@@ -678,7 +680,39 @@ export class Game {
     }
   }
 
+  getMaxAlive() {
+    if (this.maxAliveOverride) return this.maxAliveOverride;
+    const preset = CONFIG.quality[this.settings.quality] || CONFIG.quality.MEDIUM;
+    return preset.maxAlive || 14;
+  }
+
+  getActiveAliveCount() {
+    return this.zombies.filter(z => !z.isDead && !z.isRemoved).length;
+  }
+
+  processSpawnQueue() {
+    if (!this.spawnQueue || this.spawnQueue.length === 0) return;
+    const maxAlive = this.getMaxAlive();
+    while (this.spawnQueue.length > 0 && this.getActiveAliveCount() < maxAlive) {
+      const task = this.spawnQueue.shift();
+      if (task.type === 'CUSTOM') {
+        const archetype = CONFIG.enemies[task.typeName.toLowerCase()] || CONFIG.enemies.normal;
+        const z = new Zombie(this.scene, task.pos, this.sound, archetype, false);
+        this.zombies.push(z);
+        if (task.callback) task.callback(z);
+      } else if (task.type === 'NIGHT') {
+        const extraZombie = new Zombie(this.scene, task.pos, this.sound, null, true);
+        this.extraNightZombies.push(extraZombie);
+        this.zombies.push(extraZombie);
+      }
+    }
+  }
+
   spawnCustomZombie(pos, type = 'NORMAL') {
+    if (this.getActiveAliveCount() >= this.getMaxAlive()) {
+      this.spawnQueue.push({ type: 'CUSTOM', pos, typeName: type });
+      return null;
+    }
     const archetype = CONFIG.enemies[type.toLowerCase()] || CONFIG.enemies.normal;
     const z = new Zombie(this.scene, pos, this.sound, archetype, false);
     this.zombies.push(z);
@@ -686,7 +720,7 @@ export class Game {
   }
 
   spawnExtraNightZombies() {
-    const extraCount = this.settings.quality === 'LOW' ? 3 : (this.settings.quality === 'MEDIUM' ? 5 : CONFIG.shift.nightExtraSpawns);
+    const extraCount = this.settings.quality === 'LOW' ? 2 : (this.settings.quality === 'MEDIUM' ? 4 : CONFIG.shift.nightExtraSpawns);
     const pPos = this.player.mesh.position;
     for (let i = 0; i < extraCount; i++) {
       let pos = new THREE.Vector3();
@@ -706,9 +740,13 @@ export class Game {
       }
 
       if (valid) {
-        const extraZombie = new Zombie(this.scene, pos, this.sound, null, true);
-        this.extraNightZombies.push(extraZombie);
-        this.zombies.push(extraZombie);
+        if (this.getActiveAliveCount() >= this.getMaxAlive()) {
+          this.spawnQueue.push({ type: 'NIGHT', pos });
+        } else {
+          const extraZombie = new Zombie(this.scene, pos, this.sound, null, true);
+          this.extraNightZombies.push(extraZombie);
+          this.zombies.push(extraZombie);
+        }
       }
     }
   }
@@ -1018,17 +1056,20 @@ export class Game {
   }
 
   renderPass() {
+    const t0 = performance.now();
     if (this.usePostProcessing && this.composer) {
       this.composer.render();
     } else {
       this.renderer.render(this.scene, this.camera);
     }
+    this.lastRenderMs = performance.now() - t0;
     this.lastFrameCalls = this.renderer.info.render.calls;
     this.lastFrameTriangles = this.renderer.info.render.triangles;
   }
 
   loop() {
     requestAnimationFrame(() => this.loop());
+    const frameStart = performance.now();
     const dt = Math.min(this.clock.getDelta(), 0.1);
 
     this.renderer.info.reset();
@@ -1166,6 +1207,44 @@ export class Game {
       this.cameraFrustum.setFromProjectionMatrix(this.projScreenMatrix);
 
       const pPos = this.player.mesh.position;
+
+      // Tiered Animation Budget (LOW: 6, MEDIUM: 8, HIGH: 12, ULTRA: 16) & Shadow Gating
+      const activeList = [];
+      for (let i = 0; i < this.zombies.length; i++) {
+        const z = this.zombies[i];
+        if (!z.isDead && !z.isRemoved && z.mesh) {
+          activeList.push({
+            zombie: z,
+            dist: z.mesh.position.distanceTo(pPos)
+          });
+        }
+      }
+      activeList.sort((a, b) => a.dist - b.dist);
+
+      const fullRateLimit = this.settings.quality === 'LOW' ? 6 : (this.settings.quality === 'MEDIUM' ? 8 : (this.settings.quality === 'HIGH' ? 12 : 16));
+      const isHighOrUltra = (this.settings.quality === 'HIGH' || this.settings.quality === 'ULTRA');
+
+      for (let k = 0; k < activeList.length; k++) {
+        const item = activeList[k];
+        const z = item.zombie;
+        const dist = item.dist;
+
+        // Animation budget tier
+        if (k < fullRateLimit && dist < 40) {
+          z.animBudgetTier = 'FULL';
+        } else if (dist < 40) {
+          z.animBudgetTier = 'THROTTLED_15HZ';
+        } else {
+          z.animBudgetTier = 'FROZEN';
+        }
+
+        // Shadow assignment: MEDIUM / LOW = false; HIGH / ULTRA = closest 8
+        const shouldShadow = isHighOrUltra && k < 8;
+        if (z.skinnedMesh && z.skinnedMesh.castShadow !== shouldShadow) {
+          z.skinnedMesh.castShadow = shouldShadow;
+        }
+      }
+
       for (let i = this.zombies.length - 1; i >= 0; i--) {
         const z = this.zombies[i];
         if (z.isRemoved) {
@@ -1174,16 +1253,114 @@ export class Game {
           if (extraIdx !== -1) {
             this.extraNightZombies.splice(extraIdx, 1);
           }
+          this.processSpawnQueue();
           continue;
         }
         z.update(dt, this.player, this.shift.isNight, this.city.colliders, _frustum);
       }
 
       if (this.player.health <= 0) {
-        events.emit('gameLost');
+        if (!this.benchmark || !this.benchmark.active) {
+          events.emit('gameLost');
+        } else {
+          this.player.health = this.player.maxHealth;
+        }
       }
     }
 
+    this.lastUpdateMs = performance.now() - frameStart;
     this.renderPass();
+
+    if (this.benchmark && this.benchmark.active) {
+      const now = performance.now();
+      const frameDelta = now - (this.lastBenchmarkFrameTime || frameStart);
+      this.lastBenchmarkFrameTime = now;
+      this.benchmark.frames++;
+      this.benchmark.frameDeltas.push(frameDelta);
+      this.benchmark.updateTimes.push(this.lastUpdateMs || 0);
+      this.benchmark.renderTimes.push(this.lastRenderMs || 0);
+      this.benchmark.drawCalls.push(this.lastFrameCalls || 0);
+      this.benchmark.triangles.push(this.lastFrameTriangles || 0);
+
+      if (this.benchmark.frames >= this.benchmark.targetFrames) {
+        this.benchmark.active = false;
+        this.benchmark.completed = true;
+      }
+    }
+  }
+
+  startBenchmark(targetFrames = 600) {
+    this.benchmark = {
+      active: true,
+      completed: false,
+      targetFrames,
+      frames: 0,
+      frameDeltas: [],
+      updateTimes: [],
+      renderTimes: [],
+      drawCalls: [],
+      triangles: []
+    };
+    this.lastBenchmarkFrameTime = performance.now();
+    return { status: 'started', targetFrames };
+  }
+
+  getBenchmarkResults() {
+    if (!this.benchmark) return { error: 'No benchmark run' };
+    if (!this.benchmark.completed) return { status: 'running', frames: this.benchmark.frames, targetFrames: this.benchmark.targetFrames };
+
+    // Discard first 5 frames for stabilization
+    const sliceIdx = Math.min(5, this.benchmark.frameDeltas.length);
+    const validDeltas = this.benchmark.frameDeltas.slice(sliceIdx);
+    const validUpdates = this.benchmark.updateTimes.slice(sliceIdx);
+    const validRenders = this.benchmark.renderTimes.slice(sliceIdx);
+    const validCalls = this.benchmark.drawCalls.slice(sliceIdx);
+    const validTris = this.benchmark.triangles.slice(sliceIdx);
+
+    const fpsList = validDeltas.map(d => 1000 / Math.max(d, 0.001));
+    const avgFps = fpsList.reduce((a, b) => a + b, 0) / Math.max(1, fpsList.length);
+    const minFps = Math.min(...fpsList);
+    const maxFps = Math.max(...fpsList);
+
+    const avgUpdateMs = validUpdates.reduce((a, b) => a + b, 0) / Math.max(1, validUpdates.length);
+    const avgRenderMs = validRenders.reduce((a, b) => a + b, 0) / Math.max(1, validRenders.length);
+    const avgDrawCalls = Math.round(validCalls.reduce((a, b) => a + b, 0) / Math.max(1, validCalls.length));
+    const avgTriangles = Math.round(validTris.reduce((a, b) => a + b, 0) / Math.max(1, validTris.length));
+
+    // Zombie node counts
+    let skinnedMeshesPerZombie = 0;
+    let materialsPerZombie = 0;
+    if (this.zombies.length > 0) {
+      this.zombies[0].mesh.traverse(c => {
+        if (c.isSkinnedMesh) {
+          skinnedMeshesPerZombie++;
+          materialsPerZombie += Array.isArray(c.material) ? c.material.length : 1;
+        }
+      });
+    }
+
+    const bottleneck = avgUpdateMs > avgRenderMs ? 'CPU (update/mixers)' : 'GPU (composer/fillrate)';
+
+    return {
+      status: 'completed',
+      totalFrames: this.benchmark.frames,
+      quality: this.settings.quality,
+      activeZombies: this.zombies.length,
+      avgFps: Math.round(avgFps * 10) / 10,
+      minFps: Math.round(minFps * 10) / 10,
+      maxFps: Math.round(maxFps * 10) / 10,
+      avgUpdateMs: Math.round(avgUpdateMs * 100) / 100,
+      avgRenderMs: Math.round(avgRenderMs * 100) / 100,
+      avgDrawCalls,
+      avgTriangles,
+      bottleneck,
+      f3Text: this.fpsCounterEl ? this.fpsCounterEl.innerText : '',
+      gpu: this.gpuFullName,
+      zombieStats: {
+        skinnedMeshesPerZombie,
+        materialsPerZombie,
+        drawCallsPerZombie: skinnedMeshesPerZombie
+      }
+    };
   }
 }

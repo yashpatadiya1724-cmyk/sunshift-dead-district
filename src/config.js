@@ -7,10 +7,10 @@ const BASE_ENEMIES = {
   brute: { type: 'BRUTE', health: 240, daySpeed: 1.2, nightSpeed: 3.4, damage: 35, scale: 1.45, color: 0x29253d, headColor: 0x3f3659, weight: 0.15 }
 };
 
-const BASE_ZOMBIE_COUNT = 24;
-const BASE_ZOMBIE_COUNTS = { LOW: 16, MEDIUM: 22, HIGH: 26 };
-const BASE_QUALITY_COUNTS = { LOW: 16, MEDIUM: 22, HIGH: 26, ULTRA: 28 };
-const BASE_NIGHT_EXTRA_SPAWNS = 8;
+const BASE_ZOMBIE_COUNT = 20;
+const BASE_ZOMBIE_COUNTS = { LOW: 10, MEDIUM: 14, HIGH: 20, ULTRA: 28 };
+const BASE_QUALITY_COUNTS = { LOW: 10, MEDIUM: 14, HIGH: 20, ULTRA: 28 };
+const BASE_NIGHT_EXTRA_SPAWNS = 6;
 
 export const DIFFICULTIES = {
   EASY: {
@@ -50,6 +50,7 @@ export const CONFIG = {
 
   // Over-The-Shoulder Camera & Advanced Kinematic Movement Settings
   movement: {
+    sprintSpeed: 12.8,     // Base sprint speed (8.0 m/s * 1.6 multiplier)
     camera: {
       shoulderHeight: 1.55,
       defaultOffsetRight: 0.7,
@@ -72,9 +73,12 @@ export const CONFIG = {
     staminaDrainRate: 1.0, // 1.0 unit/s -> 5s total
     staminaRegenDelay: 3.0,// 3.0s delay before regeneration
     staminaRegenRate: 2.5, // units/s recovery
-    dashDuration: 0.25,    // 0.25s duration
-    dashSpeedMultiplier: 2.2, // speed surge during dash
+    dashDistance: 5.0,     // Instant velocity dash distance: 5.0m
+    dashDuration: 0.20,    // 0.20s duration
+    dashSpeed: 25.0,       // 5.0m / 0.20s = 25.0 m/s instant velocity
     dashCooldown: 1.2,     // 1.2s cooldown
+    dashInvulnerabilityTime: 0.20, // 0.2s invulnerability window
+    dashTapMaxDuration: 0.18, // Shift tap < 180ms threshold (hold >= 180ms begins sprint)
     dashStaminaCost: 1.0   // small stamina cost on dash
   },
 
@@ -150,9 +154,10 @@ export const CONFIG = {
   zombie: {
     count: 20,
     counts: {
-      LOW: 12,
-      MEDIUM: 16,
-      HIGH: 20
+      LOW: 10,
+      MEDIUM: 14,
+      HIGH: 20,
+      ULTRA: 28
     },
     attackDistance: 1.35,
     attackCooldown: 1.0,
@@ -232,7 +237,8 @@ export const CONFIG = {
       wetAsphalt: false,
       lightCones: false,
       pointLights: 0,
-      zombieCount: 16,
+      zombieCount: 10,
+      maxAlive: 10,
       anisotropy: 1,
       pixelRatio: 0.85
     },
@@ -248,7 +254,8 @@ export const CONFIG = {
       wetAsphalt: false,
       lightCones: true,
       pointLights: 3,
-      zombieCount: 20,
+      zombieCount: 14,
+      maxAlive: 14,
       anisotropy: 2,
       pixelRatio: 1.0
     },
@@ -265,6 +272,7 @@ export const CONFIG = {
       lightCones: true,
       pointLights: 6,
       zombieCount: 20,
+      maxAlive: 20,
       anisotropy: 4,
       pixelRatio: 1.25
     },
@@ -280,7 +288,8 @@ export const CONFIG = {
       wetAsphalt: true,
       lightCones: true,
       pointLights: 6,
-      zombieCount: 24,
+      zombieCount: 28,
+      maxAlive: 28,
       anisotropy: 8,
       pixelRatio: 1.5
     }

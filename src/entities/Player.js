@@ -76,9 +76,14 @@ export class Player {
     this.staminaRegenCooldown = 0;
     this.isSprinting = false;
 
-    // Shift Dash
+    // Shift Dash & Invulnerability
     this.dashTimer = 0;
     this.dashCooldownTimer = 0;
+    this.invulnerableTimer = 0;
+    this.shiftDown = false;
+    this.shiftHeldTimer = 0;
+    this.sprintStarted = false;
+    this.dashDir = new THREE.Vector3(0, 0, -1);
     this.prevShiftDown = false;
 
     // Over-The-Shoulder Camera & Aiming
@@ -412,28 +417,12 @@ export class Player {
       crosshairEl.classList.toggle('aiming', this.isAiming);
     }
 
-    // 2. Dash & Shift Handling (Tap = Dash, Hold = Sprint)
-    const shiftDown = this.input.isKey('ShiftLeft') || this.input.isKey('ShiftRight');
-    if (shiftDown && !this.prevShiftDown && !this.isAiming) {
-      if (this.dashCooldownTimer <= 0) {
-        // Trigger short dash
-        this.dashTimer = moveCfg.dashDuration || 0.25;
-        this.dashCooldownTimer = moveCfg.dashCooldown || 1.2;
-        this.stamina = Math.max(0, this.stamina - (moveCfg.dashStaminaCost || 1.0));
-        this.staminaRegenCooldown = moveCfg.staminaRegenDelay || 3.0;
-        if (this.sound && typeof this.sound.playDash === 'function') {
-          this.sound.playDash();
-        }
-      }
-    }
-    this.prevShiftDown = shiftDown;
-
+    // 2. Dash & Shift Handling (Tap < 180ms = Dash, Hold >= 180ms = Sprint)
     if (this.dashCooldownTimer > 0) {
       this.dashCooldownTimer = Math.max(0, this.dashCooldownTimer - dt);
     }
-    const isDashing = this.dashTimer > 0;
-    if (isDashing) {
-      this.dashTimer = Math.max(0, this.dashTimer - dt);
+    if (this.invulnerableTimer > 0) {
+      this.invulnerableTimer = Math.max(0, this.invulnerableTimer - dt);
     }
 
     // 3. Movement Inputs
@@ -445,13 +434,67 @@ export class Player {
     if (this.input.isKey('KeyD')) moveX += 1;
     const isMoving = (moveX !== 0 || moveZ !== 0);
 
-    // 4. Sprint & Stamina Mechanics
-    const canSprint = shiftDown && !this.isAiming && isMoving && this.stamina > 0.1;
-    this.isSprinting = canSprint;
+    if (isMoving) {
+      _moveVector.set(moveX, 0, moveZ).normalize();
+      _moveVector.applyAxisAngle(_upAxis, this.yaw);
+    }
 
+    const shiftKey = this.input.isKey('ShiftLeft') || this.input.isKey('ShiftRight');
+    const tapMaxTime = moveCfg.dashTapMaxDuration || 0.18;
+
+    if (shiftKey && !this.shiftDown) {
+      this.shiftDown = true;
+      this.shiftHeldTimer = 0;
+      this.sprintStarted = false;
+    }
+
+    if (this.shiftDown && shiftKey) {
+      this.shiftHeldTimer += dt;
+      if (this.shiftHeldTimer >= tapMaxTime) {
+        // Holding Shift >= 180ms: Enter Sprint (Dash will NOT trigger on release)
+        if (isMoving && !this.isAiming && this.stamina > 0.1) {
+          this.isSprinting = true;
+          this.sprintStarted = true;
+        }
+      }
+    }
+
+    // On Shift Key Release
+    if (this.shiftDown && !shiftKey) {
+      this.shiftDown = false;
+      this.isSprinting = false;
+
+      // Tap (< 180ms) + Movement Key active + Not Aiming + Off Cooldown = DASH
+      if (!this.sprintStarted && this.shiftHeldTimer < tapMaxTime && isMoving && !this.isAiming && this.dashCooldownTimer <= 0) {
+        this.dashTimer = moveCfg.dashDuration || 0.20;
+        this.invulnerableTimer = moveCfg.dashInvulnerabilityTime || 0.20;
+        this.dashCooldownTimer = moveCfg.dashCooldown || 1.2;
+        this.dashDir.copy(_moveVector);
+        this.stamina = Math.max(0, this.stamina - (moveCfg.dashStaminaCost || 1.0));
+        this.staminaRegenCooldown = moveCfg.staminaRegenDelay || 3.0;
+
+        if (this.sound && typeof this.sound.playDash === 'function') {
+          this.sound.playDash();
+        }
+      } else if (this.sprintStarted) {
+        this.staminaRegenCooldown = moveCfg.staminaRegenDelay || 3.0;
+      }
+      this.sprintStarted = false;
+      this.shiftHeldTimer = 0;
+    }
+
+    const isDashing = this.dashTimer > 0;
+    if (isDashing) {
+      this.dashTimer = Math.max(0, this.dashTimer - dt);
+    }
+
+    // 4. Stamina Drain / Regeneration
     if (this.isSprinting && !isDashing) {
       this.stamina = Math.max(0, this.stamina - dt * (moveCfg.staminaDrainRate || 1.0));
       this.staminaRegenCooldown = moveCfg.staminaRegenDelay || 3.0;
+      if (this.stamina <= 0.05) {
+        this.isSprinting = false;
+      }
     } else if (!isDashing) {
       if (this.staminaRegenCooldown > 0) {
         this.staminaRegenCooldown = Math.max(0, this.staminaRegenCooldown - dt);
@@ -468,35 +511,38 @@ export class Player {
     if (stamBar) stamBar.style.width = `${stamPct}%`;
     if (stamTxt) stamTxt.innerText = `${Math.round(stamPct)}%`;
 
-    // 5. Target Top Speed & Acceleration/Deceleration Kinematics
-    let targetTopSpeed = this.speed;
+    // 5. Velocity Kinematics (Instant Velocity for Dash, Kinematic Curve for Walk/Sprint)
     if (isDashing) {
-      targetTopSpeed = this.speed * (moveCfg.dashSpeedMultiplier || 2.2);
-    } else if (this.isSprinting) {
-      targetTopSpeed = this.speed * this.sprintMultiplier;
-    } else if (this.isAiming) {
-      targetTopSpeed = this.speed * 0.65;
-    }
-
-    if (isMoving) {
-      _moveVector.set(moveX, 0, moveZ).normalize();
-      _moveVector.applyAxisAngle(_upAxis, this.yaw);
-      _targetVel.copy(_moveVector).multiplyScalar(targetTopSpeed);
+      // Instant velocity: 5.0m over 0.20s = 25.0 m/s (zero acceleration ramp)
+      const dashSpeed = moveCfg.dashSpeed || 25.0;
+      this.velocity.x = this.dashDir.x * dashSpeed;
+      this.velocity.z = this.dashDir.z * dashSpeed;
+      this.currentSpeed = dashSpeed;
     } else {
-      _targetVel.set(0, 0, 0);
+      let targetTopSpeed = this.speed;
+      if (this.isSprinting) {
+        targetTopSpeed = this.speed * this.sprintMultiplier;
+      } else if (this.isAiming) {
+        targetTopSpeed = this.speed * 0.65;
+      }
+
+      if (isMoving) {
+        _targetVel.copy(_moveVector).multiplyScalar(targetTopSpeed);
+      } else {
+        _targetVel.set(0, 0, 0);
+      }
+
+      const accelTime = moveCfg.accelerationTime || 0.2;
+      const decelTime = moveCfg.decelerationTime || 0.1;
+      const accelRate = targetTopSpeed / accelTime;
+      const decelRate = (this.speed * this.sprintMultiplier) / decelTime;
+      const currentRate = isMoving ? accelRate : decelRate;
+
+      moveTowards2D(this.velocity, _targetVel.x, _targetVel.z, currentRate * dt);
+      this.currentSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
     }
 
-    // Acceleration (0.2s to top speed) & Deceleration (0.1s to full stop)
-    const accelTime = moveCfg.accelerationTime || 0.2;
-    const decelTime = moveCfg.decelerationTime || 0.1;
-    const accelRate = targetTopSpeed / accelTime;
-    const decelRate = (this.speed * this.sprintMultiplier) / decelTime;
-    const currentRate = isMoving ? accelRate : decelRate;
-
-    moveTowards2D(this.velocity, _targetVel.x, _targetVel.z, currentRate * dt);
-
-    const horizontalSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
-    this.currentSpeed = horizontalSpeed;
+    const horizontalSpeed = this.currentSpeed;
 
     // Track acceleration for debug
     this.acceleration = (horizontalSpeed - this.prevSpeed) / Math.max(dt, 0.001);
@@ -956,6 +1002,7 @@ export class Player {
 
   takeDamage(amount, sourcePos = null) {
     if (this.health <= 0) return;
+    if (this.invulnerableTimer > 0) return; // 0.2s dash invulnerability window
     this.health = Math.max(0, this.health - amount);
 
     if (this.sound) {

@@ -261,16 +261,16 @@ runTest('applyDifficulty dynamically scales enemy health and damage', () => {
 
 runTest('applyDifficulty dynamically scales zombie spawn density and night extra spawns', () => {
   applyDifficulty('EASY');
-  assert(CONFIG.zombie.count < 24, 'EASY reduces base zombie count');
-  assert(CONFIG.shift.nightExtraSpawns < 8, 'EASY reduces night extra spawns');
+  assert(CONFIG.zombie.count < 20, 'EASY reduces base zombie count');
+  assert(CONFIG.shift.nightExtraSpawns < 6, 'EASY reduces night extra spawns');
 
   applyDifficulty('HARD');
-  assert(CONFIG.zombie.count > 24, 'HARD increases base zombie count');
-  assert(CONFIG.shift.nightExtraSpawns > 8, 'HARD increases night extra spawns');
+  assert(CONFIG.zombie.count > 20, 'HARD increases base zombie count');
+  assert(CONFIG.shift.nightExtraSpawns > 6, 'HARD increases night extra spawns');
 
   applyDifficulty('NORMAL');
-  assert.strictEqual(CONFIG.zombie.count, 24, 'NORMAL resets base zombie count to 24');
-  assert.strictEqual(CONFIG.shift.nightExtraSpawns, 8, 'NORMAL resets night extra spawns to 8');
+  assert.strictEqual(CONFIG.zombie.count, 20, 'NORMAL resets base zombie count to 20');
+  assert.strictEqual(CONFIG.shift.nightExtraSpawns, 6, 'NORMAL resets night extra spawns to 6');
 });
 
 runTest('All-time records initialization and parsing behaves reliably', () => {

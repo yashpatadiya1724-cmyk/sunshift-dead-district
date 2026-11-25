@@ -197,43 +197,101 @@ runTest('Stamina regeneration enforces strict 3.0s delay after sprint ends', () 
   assert(stamina > 1.0, 'Stamina must regenerate after 3.0s delay elapsed');
 });
 
-// ===== 4. DASH MECHANIC & COOLDOWN =====
+// ===== 4. DASH MECHANIC, INSTANT VELOCITY & INVULNERABILITY =====
 console.log('\n--- Suite 4: Tactical Kinetic Dash ---');
 
-runTest('Dash triggers with 0.25s duration and enforces 1.20s cooldown', () => {
-  let dashTimer = 0;
-  let dashCooldown = 0;
-  let speedMultiplier = 1.0;
+runTest('Dash triggers with instant velocity (no ramp) achieving exactly 5.0m displacement', () => {
+  const dashSpeed = moveCfg.dashSpeed; // 25.0 m/s
+  const dashDuration = moveCfg.dashDuration; // 0.20s
+  const dt = 1 / 100; // 10ms step
+  let distance = 0;
+  let timer = dashDuration;
 
-  // Trigger dash
+  // Instant velocity: no acceleration ramp
+  while (timer > 0) {
+    distance += dashSpeed * dt;
+    timer -= dt;
+  }
+
+  assert(Math.abs(distance - moveCfg.dashDistance) < 0.01, `Expected 5.0m displacement, got ${distance.toFixed(2)}m`);
+  assert.strictEqual(moveCfg.dashDistance, 5.0, 'Configured dash distance must be 5.0m');
+  assert.strictEqual(moveCfg.dashDuration, 0.20, 'Configured dash duration must be 0.20s');
+});
+
+runTest('Dash provides 0.20s invulnerability window preventing incoming damage', () => {
+  let playerHealth = 100;
+  let invulnerableTimer = moveCfg.dashInvulnerabilityTime; // 0.20s
+
+  const takeDamage = (dmg) => {
+    if (invulnerableTimer > 0) return; // Invulnerable
+    playerHealth -= dmg;
+  };
+
+  // Attack 1: occurs during dash invulnerability (0.10s)
+  takeDamage(35);
+  assert.strictEqual(playerHealth, 100, 'Damage must be completely ignored during invulnerability window');
+
+  // Time passes past 0.20s
+  invulnerableTimer = 0;
+
+  // Attack 2: occurs after invulnerability expires
+  takeDamage(35);
+  assert.strictEqual(playerHealth, 65, 'Damage must register normally once invulnerability expires');
+});
+
+runTest('Shift tap (<180ms) with movement key triggers dash, while holding (>=180ms) activates sprint without dash', () => {
+  const tapMaxDuration = moveCfg.dashTapMaxDuration; // 0.18s
+
+  // Helper simulating player shift input state machine
+  const simulateShiftAction = (heldDuration, isMoving) => {
+    let sprintStarted = false;
+    let dashTriggered = false;
+
+    // Shift pressed and held
+    if (heldDuration >= tapMaxDuration && isMoving) {
+      sprintStarted = true;
+    }
+
+    // Shift released
+    if (!sprintStarted && heldDuration < tapMaxDuration && isMoving) {
+      dashTriggered = true;
+    }
+
+    return { sprintStarted, dashTriggered };
+  };
+
+  // Case A: Tap for 100ms with movement key -> Must trigger DASH
+  const tapResult = simulateShiftAction(0.10, true);
+  assert.strictEqual(tapResult.dashTriggered, true, 'Short tap (<180ms) with movement must trigger dash');
+  assert.strictEqual(tapResult.sprintStarted, false, 'Short tap must NOT activate sprint');
+
+  // Case B: Hold for 300ms with movement key -> Must activate SPRINT, NO DASH on release
+  const holdResult = simulateShiftAction(0.30, true);
+  assert.strictEqual(holdResult.sprintStarted, true, 'Hold (>=180ms) must activate sprint');
+  assert.strictEqual(holdResult.dashTriggered, false, 'Releasing after sprint must NOT trigger dash');
+
+  // Case C: Tap for 100ms WITHOUT movement key (stationary) -> Must NOT trigger DASH
+  const stationaryTap = simulateShiftAction(0.10, false);
+  assert.strictEqual(stationaryTap.dashTriggered, false, 'Tap without movement key must NOT trigger dash');
+});
+
+runTest('Dash enforces strict 1.20s cooldown between activations', () => {
+  let dashCooldown = 0;
+
   const triggerDash = () => {
     if (dashCooldown <= 0) {
-      dashTimer = moveCfg.dashDuration; // 0.25s
       dashCooldown = moveCfg.dashCooldown; // 1.20s
-      speedMultiplier = moveCfg.dashSpeedMultiplier;
       return true;
     }
     return false;
   };
 
-  assert.strictEqual(triggerDash(), true, 'First dash trigger must succeed');
-  assert.strictEqual(dashTimer, 0.25, 'Dash duration must be 0.25s');
-  assert.strictEqual(dashCooldown, 1.2, 'Dash cooldown must be 1.2s');
-  assert.strictEqual(speedMultiplier, moveCfg.dashSpeedMultiplier);
+  assert.strictEqual(triggerDash(), true, 'First dash succeeds');
+  assert.strictEqual(dashCooldown, 1.20);
+  assert.strictEqual(triggerDash(), false, 'Second dash blocked during cooldown');
 
-  // Attempt second dash immediately -> must be blocked
-  assert.strictEqual(triggerDash(), false, 'Second dash must be blocked while on cooldown');
-
-  // Advance time by 0.25s (dash ends, cooldown remains 0.95s)
-  dashTimer = Math.max(0, dashTimer - 0.25);
-  dashCooldown = Math.max(0, dashCooldown - 0.25);
-  assert.strictEqual(dashTimer, 0, 'Dash duration has finished');
-  assert(dashCooldown > 0, 'Cooldown is still ticking');
-
-  // Advance time by another 1.0s (total 1.25s elapsed)
-  dashCooldown = Math.max(0, dashCooldown - 1.0);
-  assert.strictEqual(dashCooldown, 0, 'Cooldown has completed');
-  assert.strictEqual(triggerDash(), true, 'Dash can trigger again once cooldown reaches 0');
+  dashCooldown -= 1.20;
+  assert.strictEqual(triggerDash(), true, 'Dash succeeds again after 1.2s cooldown');
 });
 
 console.log('\n================================');

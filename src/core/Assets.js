@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export class AssetManager {
   constructor() {
@@ -84,6 +85,9 @@ export class AssetManager {
                 item.path,
                 (gltf) => {
                   this.harmonizeMaterials(gltf.scene);
+                  if (item.id === 'zombie' || item.id === 'player') {
+                    this.optimizeCharacterModel(gltf.scene);
+                  }
                   this.models.set(item.id, gltf.scene);
                   if (gltf.animations && gltf.animations.length > 0) {
                     this.animations.set(item.id, gltf.animations);
@@ -487,6 +491,48 @@ export class AssetManager {
         }
       }
     });
+  }
+
+  optimizeCharacterModel(root) {
+    const skinnedMeshes = [];
+    root.traverse((node) => {
+      if (node.isSkinnedMesh) {
+        skinnedMeshes.push(node);
+      }
+    });
+
+    if (skinnedMeshes.length > 1) {
+      const rootSkeleton = skinnedMeshes[0].skeleton;
+      const bindMatrix = skinnedMeshes[0].bindMatrix;
+      const sharedMat = skinnedMeshes[0].material;
+
+      // De-interleave each geometry first before merging
+      const geoms = skinnedMeshes.map(m => {
+        const g = m.geometry.clone();
+        BufferGeometryUtils.deinterleaveGeometry(g);
+        return g;
+      });
+
+      try {
+        const mergedGeo = BufferGeometryUtils.mergeGeometries(geoms, false);
+        if (mergedGeo) {
+          const singleSkinned = new THREE.SkinnedMesh(mergedGeo, sharedMat);
+          singleSkinned.name = 'SingleSkinnedBody';
+          singleSkinned.bind(rootSkeleton, bindMatrix);
+          singleSkinned.castShadow = false;
+          singleSkinned.receiveShadow = true;
+
+          // Remove individual separated skinned meshes from prototype
+          for (const sm of skinnedMeshes) {
+            if (sm.parent) sm.parent.remove(sm);
+          }
+
+          root.add(singleSkinned);
+        }
+      } catch (err) {
+        console.warn('[Assets] Character optimization merge warning:', err);
+      }
+    }
   }
 
   // --- INSTANCING & CLONING HELPERS ---

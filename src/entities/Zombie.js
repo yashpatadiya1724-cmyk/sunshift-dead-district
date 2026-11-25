@@ -14,6 +14,13 @@ const _armGeo = new THREE.CapsuleGeometry(0.11, 0.60, 5, 6);
 const _legGeo = new THREE.CapsuleGeometry(0.13, 0.68, 5, 6);
 
 // Static shared materials by archetype (allocated once, shared across all zombies)
+const _sharedGLBMats = {
+  NORMAL: new THREE.MeshStandardMaterial({ color: 0x3d5236, roughness: 0.75, metalness: 0.1 }),
+  RUNNER: new THREE.MeshStandardMaterial({ color: 0x6a3830, roughness: 0.70, metalness: 0.1 }),
+  BRUTE: new THREE.MeshStandardMaterial({ color: 0x29253d, roughness: 0.80, metalness: 0.15 })
+};
+const _sharedLODGeo = new THREE.BoxGeometry(0.7, 1.8, 0.4);
+
 const _sharedMats = {
   NORMAL: {
     body: new THREE.MeshStandardMaterial({ color: 0x3d5236, roughness: 0.78, metalness: 0.05 }),
@@ -89,6 +96,12 @@ export class Zombie {
     this.maxHealth = this.archetype.health;
     this.damage = this.archetype.damage;
     this.isDead = false;
+    this.isRemoved = false;
+    this.isNightSpawn = isNightSpawn;
+    this.isFading = false;
+    this.fadeAlpha = 1.0;
+    this.animBudgetTier = 'FULL';
+    this.accumulatedAnimDt = 0;
 
     // UV Flare Freeze state
     this.frozenTimer = 0;
@@ -146,21 +159,32 @@ export class Zombie {
         if (this.actions.walk) this.actions.walk.play();
       }
 
-      this.mesh.traverse((node) => {
-        if (node.isMesh && node.material) {
-          node.material = node.material.clone();
-          node.castShadow = (node.position.y < 1.4 && node.position.y > 0.8);
-          node.receiveShadow = true;
+      // Shared Archetype Material for GLB SkinnedMesh (1 single material per archetype)
+      const archetypeKey = this.archetype.name || 'NORMAL';
+      this.archetypeMat = _sharedGLBMats[archetypeKey] || _sharedGLBMats.NORMAL;
 
-          if (node.name.includes('head') || (node.geometry?.type === 'BoxGeometry' && node.position.y > 1.5)) {
-            node.material.color = new THREE.Color(this.archetype.headColor);
-            this.headMat = node.material;
-          } else if (!node.name.includes('Eye')) {
-            node.material.color = new THREE.Color(this.archetype.color);
-            this.bodyMat = node.material;
-          }
+      let primarySkinnedMesh = null;
+      this.mesh.traverse((node) => {
+        if (node.isSkinnedMesh) {
+          primarySkinnedMesh = node;
+          node.material = this.archetypeMat;
+          node.castShadow = false; // Off by default on LOW/MEDIUM; closest 8 enabled dynamically on HIGH
+          node.receiveShadow = true;
+        } else if (node.isMesh) {
+          node.material = this.archetypeMat;
+          node.castShadow = false;
+          node.receiveShadow = true;
         }
       });
+      this.skinnedMesh = primarySkinnedMesh;
+
+      // Zombie LOD: 15+ units simplified low-poly mesh (1 draw call, 12 triangles, no skeleton skinning)
+      this.lodLowMesh = new THREE.Mesh(_sharedLODGeo, this.archetypeMat);
+      this.lodLowMesh.position.y = 0.9;
+      this.lodLowMesh.visible = false;
+      this.lodLowMesh.castShadow = false;
+      this.lodLowMesh.receiveShadow = true;
+      this.mesh.add(this.lodLowMesh);
     } else {
       // Build Natural PBR Procedural Rig
       this.mesh = new THREE.Group();
@@ -254,6 +278,17 @@ export class Zombie {
 
   updateAnimation(dt) {
     if (this.isDead || this.frozenTimer > 0) return;
+
+    // Animation budget tiers: FROZEN = 0 Hz, THROTTLED_15HZ = 15 Hz, FULL = full 60 Hz
+    if (this.animBudgetTier === 'FROZEN') {
+      return;
+    }
+    if (this.animBudgetTier === 'THROTTLED_15HZ') {
+      this.accumulatedAnimDt += dt;
+      if (this.accumulatedAnimDt < 0.066) return;
+      dt = this.accumulatedAnimDt;
+      this.accumulatedAnimDt = 0;
+    }
 
     if (this.mixer) {
       this.mixer.update(dt);
@@ -377,6 +412,28 @@ export class Zombie {
       // Face player
       this.mesh.rotation.y = Math.atan2(dirX, dirZ);
 
+      // Zombie LOD: 15+ units simplified low-poly mesh (1 draw call, no skinning)
+      if (this.lodLowMesh && this.skinnedMesh) {
+        if (horizontalDist > 15) {
+          if (this.skinnedMesh.visible) {
+            this.skinnedMesh.visible = false;
+            this.lodLowMesh.visible = true;
+          }
+        } else {
+          if (!this.skinnedMesh.visible) {
+            this.skinnedMesh.visible = true;
+            this.lodLowMesh.visible = false;
+          }
+        }
+      }
+
+      // Far Visibility Culling (60+ units invisible)
+      if (horizontalDist > 60) {
+        this.mesh.visible = false;
+      } else {
+        this.mesh.visible = true;
+      }
+
       // Frustum & distance check for animations
       const inView = frustum ? frustum.containsPoint(this.mesh.position) : true;
       if (inView && horizontalDist <= 40) {
@@ -432,7 +489,14 @@ export class Zombie {
   takeDamage(amt) {
     this.health -= amt;
 
-    if (this.headMesh) {
+    if (this.skinnedMesh) {
+      this.skinnedMesh.material = _sharedMats.FLASH_HEAD;
+      setTimeout(() => {
+        if (this.skinnedMesh && !this.isDead) {
+          this.skinnedMesh.material = this.archetypeMat;
+        }
+      }, 80);
+    } else if (this.headMesh) {
       this.headMesh.material = _sharedMats.FLASH_HEAD;
       setTimeout(() => {
         if (this.headMesh && !this.isDead) {
