@@ -524,6 +524,9 @@ body, html {
   background: rgba(0, 0, 0, 0.45);
   z-index: 1000;
   pointer-events: auto !important;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
 }
 
 .menu-card {
@@ -534,15 +537,29 @@ body, html {
   background: rgba(14, 16, 22, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(14px);
-  padding: 40px 48px;
+  padding: 36px 44px;
   border-radius: 12px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8), 0 0 30px rgba(255, 170, 0, 0.08);
-  min-width: 360px;
-  max-width: 520px;
+  min-width: 340px;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
   animation: fadeIn 0.25s ease-out;
   pointer-events: auto !important;
   position: relative;
   z-index: 1001;
+  margin: auto;
+}
+
+.menu-card::-webkit-scrollbar {
+  width: 5px;
+}
+.menu-card::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+.menu-card::-webkit-scrollbar-thumb {
+  background: #ffaa00;
+  border-radius: 3px;
 }
 
 @keyframes fadeIn {
@@ -562,8 +579,108 @@ body, html {
   font-size: 14px;
   letter-spacing: 5px;
   color: #ff3333;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
   font-weight: bold;
+}
+
+/* Difficulty Selector */
+.difficulty-container {
+  width: 100%;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.difficulty-title {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #ffaa00;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+.difficulty-selector {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.btn-diff {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #bbb;
+  border-radius: 4px;
+}
+.btn-diff:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-color: #ffaa00;
+}
+.btn-diff.active {
+  background: #ffaa00;
+  border-color: #ffaa00;
+  color: #000;
+  font-weight: 900;
+  box-shadow: 0 0 12px rgba(255, 170, 0, 0.5);
+}
+
+/* Records Display */
+.menu-records-box {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 8px 14px;
+  margin-bottom: 20px;
+}
+.record-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.record-lbl {
+  color: #888;
+  letter-spacing: 1px;
+  font-family: monospace;
+}
+.record-val {
+  color: #00ff66;
+  font-size: 13px;
+  letter-spacing: 1px;
+  font-family: monospace;
+}
+
+.gameover-records-row {
+  display: flex;
+  justify-content: space-around;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 170, 0, 0.3);
+  border-radius: 6px;
+  padding: 8px 16px;
+  margin-bottom: 20px;
+}
+.record-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.record-pill-lbl {
+  color: #ffaa00;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+.record-pill-val {
+  color: #00ff66;
+  font-family: monospace;
+  font-size: 13px;
 }
 
 .panel-title {
@@ -999,4 +1116,165 @@ body, html {
   margin: 4px 0 12px 0;
   font-weight: bold;
 }
+
+/* =========================================
+   KEYBOARD NAVIGATION & FOCUS STYLES
+   ========================================= */
+.cyber-btn:focus-visible,
+.cyber-btn.keyboard-focus,
+.btn-diff:focus-visible,
+.btn-diff.keyboard-focus,
+.btn-quality:focus-visible,
+.btn-quality.keyboard-focus,
+.cyber-slider:focus-visible,
+.cyber-slider.keyboard-focus,
+.cyber-checkbox:focus-visible,
+.cyber-checkbox.keyboard-focus {
+  outline: 2px solid #ffaa00 !important;
+  outline-offset: 2px !important;
+  border-color: #ffcc00 !important;
+  box-shadow: 0 0 16px rgba(255, 170, 0, 0.8), inset 0 0 8px rgba(255, 170, 0, 0.25) !important;
+  transform: translateY(-2px);
+}
+
+/* =========================================
+   RESPONSIVE DESIGN (SMALL SCREENS / MOBILE)
+   ========================================= */
+@media screen and (max-width: 640px), screen and (max-height: 640px) {
+  #menu-container {
+    padding: 10px;
+    align-items: flex-start;
+  }
+
+  .menu-card {
+    padding: 20px 18px;
+    min-width: 280px;
+    width: 100%;
+    max-width: 440px;
+    max-height: 94vh;
+    border-radius: 8px;
+    margin: auto;
+  }
+
+  .game-logo {
+    font-size: 30px;
+    letter-spacing: 4px;
+  }
+
+  .game-subtitle {
+    font-size: 11px;
+    letter-spacing: 3px;
+    margin-bottom: 14px;
+  }
+
+  .panel-title {
+    font-size: 18px;
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+  }
+
+  .difficulty-container {
+    margin-bottom: 12px;
+    gap: 4px;
+  }
+
+  .difficulty-title {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+  }
+
+  .btn-diff {
+    padding: 6px 4px;
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  .menu-records-box {
+    padding: 6px 10px;
+    margin-bottom: 12px;
+    font-size: 10px;
+  }
+
+  .record-lbl, .record-val {
+    font-size: 10px;
+  }
+
+  .menu-btn-stack {
+    gap: 8px;
+  }
+
+  .cyber-btn {
+    padding: 10px 14px;
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+
+  .btn-back {
+    margin-top: 14px;
+  }
+
+  .jam-tag {
+    margin-top: 14px;
+    font-size: 9px;
+  }
+
+  .controls-grid {
+    gap: 6px;
+    font-size: 11px;
+  }
+
+  .ctrl-row {
+    padding: 4px 0;
+  }
+
+  .setting-row {
+    margin-bottom: 12px;
+    gap: 4px;
+  }
+
+  .setting-label {
+    font-size: 11px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .stat-box {
+    padding: 8px 6px;
+  }
+
+  .stat-num {
+    font-size: 18px;
+  }
+
+  .stat-lbl {
+    font-size: 10px;
+  }
+
+  .gameover-records-row {
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    margin-bottom: 12px;
+  }
+
+  .record-pill {
+    font-size: 11px;
+  }
+
+  #gameover-title {
+    font-size: 20px;
+    letter-spacing: 2px;
+  }
+
+  #gameover-subtitle {
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+}
+
 

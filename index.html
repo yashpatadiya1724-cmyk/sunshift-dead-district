@@ -216,6 +216,27 @@
     <div id="main-menu" class="menu-card" style="display: flex;">
       <h1 class="game-logo">SUNSHIFT</h1>
       <h2 class="game-subtitle">DEAD DISTRICT</h2>
+
+      <div class="difficulty-container">
+        <div class="difficulty-title">COMBAT DIFFICULTY</div>
+        <div class="difficulty-selector">
+          <button class="cyber-btn btn-diff" data-difficulty="EASY">EASY</button>
+          <button class="cyber-btn btn-diff active" data-difficulty="NORMAL">NORMAL</button>
+          <button class="cyber-btn btn-diff" data-difficulty="HARD">HARD</button>
+        </div>
+      </div>
+
+      <div class="menu-records-box">
+        <div class="record-item">
+          <span class="record-lbl">RECORD SURVIVAL:</span>
+          <b id="main-best-time" class="record-val">00:00</b>
+        </div>
+        <div class="record-item">
+          <span class="record-lbl">RECORD KILLS:</span>
+          <b id="main-best-kills" class="record-val">0</b>
+        </div>
+      </div>
+
       <div class="menu-btn-stack">
         <button id="btn-play" class="cyber-btn primary">PLAY CAMPAIGN</button>
         <button id="btn-controls" class="cyber-btn">CONTROLS</button>
@@ -329,6 +350,16 @@
         <div class="stat-box">
           <div class="stat-num" id="stat-shifts">0</div>
           <div class="stat-lbl">Shifts Survived</div>
+        </div>
+      </div>
+      <div class="gameover-records-row">
+        <div class="record-pill">
+          <span class="record-pill-lbl">BEST SURVIVAL:</span>
+          <b id="gameover-best-time" class="record-pill-val">00:00</b>
+        </div>
+        <div class="record-pill">
+          <span class="record-pill-lbl">BEST KILLS:</span>
+          <b id="gameover-best-kills" class="record-pill-val">0</b>
         </div>
       </div>
       <div class="menu-btn-stack">

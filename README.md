@@ -12,8 +12,8 @@
 ---
 
 ## 🎮 Play Online
-- **Web Browser (GitHub Pages):** [https://yourusername.github.io/sunshift-dead-district/](https://yourusername.github.io/sunshift-dead-district/)
-- **itch.io Page:** [https://yourusername.itch.io/sunshift-dead-district](https://yourusername.itch.io/sunshift-dead-district)
+- **Web Browser (GitHub Pages):** [https://yashpatadiya1724-cmyk.github.io/sunshift-dead-district/](https://yashpatadiya1724-cmyk.github.io/sunshift-dead-district/)
+- **itch.io Page:** [https://yashpatadiya1724-cmyk.itch.io/sunshift-dead-district](https://yashpatadiya1724-cmyk.itch.io/sunshift-dead-district)
 
 ---
 

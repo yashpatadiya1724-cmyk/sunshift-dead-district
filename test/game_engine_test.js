@@ -1,6 +1,6 @@
 // ===== SUNSHIFT: DEAD DISTRICT - AUTOMATED ENGINE & CONFIG TEST SUITE =====
 import assert from 'node:assert';
-import { CONFIG } from '../src/config.js';
+import { CONFIG, applyDifficulty } from '../src/config.js';
 import { EventBus } from '../src/core/Events.js';
 import { Input } from '../src/core/Input.js';
 
@@ -222,6 +222,103 @@ runTest('Quality presets scale fidelity correctly (shadow maps and pixel ratios)
   assert.strictEqual(HIGH.shadows, true, 'HIGH quality enables shadow maps');
   assert(HIGH.shadowMapSize > MEDIUM.shadowMapSize, 'HIGH shadow map size must exceed MEDIUM');
   assert(HIGH.pixelRatio > LOW.pixelRatio, 'HIGH pixel ratio must exceed LOW');
+});
+
+// ===== SUITE 6: DIFFICULTY SCALING & PERSISTENT RECORDS =====
+console.log('\n--- Suite 6: Difficulty Scaling & Saved Records ---');
+
+runTest('Difficulty presets exist and have valid scaling coefficients (Easy, Normal, Hard)', () => {
+  const diffs = CONFIG.difficulty;
+  assert(diffs, 'Difficulty presets must exist');
+  assert(diffs.EASY && diffs.NORMAL && diffs.HARD, 'EASY, NORMAL, HARD tiers required');
+
+  assert(diffs.EASY.healthMultiplier < diffs.NORMAL.healthMultiplier, 'EASY enemy health must be lower than NORMAL');
+  assert(diffs.HARD.healthMultiplier > diffs.NORMAL.healthMultiplier, 'HARD enemy health must be higher than NORMAL');
+
+  assert(diffs.EASY.damageMultiplier < diffs.NORMAL.damageMultiplier, 'EASY damage must be lower than NORMAL');
+  assert(diffs.HARD.damageMultiplier > diffs.NORMAL.damageMultiplier, 'HARD damage must be higher than NORMAL');
+
+  assert(diffs.EASY.zombieCountMultiplier < diffs.NORMAL.zombieCountMultiplier, 'EASY zombie count must be lower than NORMAL');
+  assert(diffs.HARD.zombieCountMultiplier > diffs.NORMAL.zombieCountMultiplier, 'HARD zombie count must be higher than NORMAL');
+});
+
+runTest('applyDifficulty dynamically scales enemy health and damage', () => {
+  applyDifficulty('EASY');
+  assert(CONFIG.enemies.normal.health < 70, 'EASY normal zombie health scaled down');
+  assert(CONFIG.enemies.normal.damage < 12, 'EASY normal zombie damage scaled down');
+  assert(CONFIG.enemies.brute.health < 220, 'EASY brute zombie health scaled down');
+
+  applyDifficulty('HARD');
+  assert(CONFIG.enemies.normal.health > 70, 'HARD normal zombie health scaled up');
+  assert(CONFIG.enemies.normal.damage > 12, 'HARD normal zombie damage scaled up');
+  assert(CONFIG.enemies.brute.health > 220, 'HARD brute zombie health scaled up');
+
+  applyDifficulty('NORMAL');
+  assert.strictEqual(CONFIG.enemies.normal.health, 70, 'NORMAL resets normal zombie health to 70');
+  assert.strictEqual(CONFIG.enemies.normal.damage, 12, 'NORMAL resets normal zombie damage to 12');
+  assert.strictEqual(CONFIG.enemies.brute.health, 220, 'NORMAL resets brute zombie health to 220');
+});
+
+runTest('applyDifficulty dynamically scales zombie spawn density and night extra spawns', () => {
+  applyDifficulty('EASY');
+  assert(CONFIG.zombie.count < 20, 'EASY reduces base zombie count');
+  assert(CONFIG.shift.nightExtraSpawns < 6, 'EASY reduces night extra spawns');
+
+  applyDifficulty('HARD');
+  assert(CONFIG.zombie.count > 20, 'HARD increases base zombie count');
+  assert(CONFIG.shift.nightExtraSpawns > 6, 'HARD increases night extra spawns');
+
+  applyDifficulty('NORMAL');
+  assert.strictEqual(CONFIG.zombie.count, 20, 'NORMAL resets base zombie count to 20');
+  assert.strictEqual(CONFIG.shift.nightExtraSpawns, 6, 'NORMAL resets night extra spawns to 6');
+});
+
+runTest('All-time records initialization and parsing behaves reliably', () => {
+  const parseRecords = (jsonStr) => {
+    const defaults = { bestSurvivalTime: 0, bestKills: 0 };
+    try {
+      return jsonStr ? { ...defaults, ...JSON.parse(jsonStr) } : defaults;
+    } catch {
+      return defaults;
+    }
+  };
+
+  assert.deepStrictEqual(parseRecords(null), { bestSurvivalTime: 0, bestKills: 0 });
+  assert.deepStrictEqual(parseRecords(''), { bestSurvivalTime: 0, bestKills: 0 });
+  assert.deepStrictEqual(parseRecords('invalid-json'), { bestSurvivalTime: 0, bestKills: 0 });
+  assert.deepStrictEqual(parseRecords('{"bestSurvivalTime":145,"bestKills":22}'), { bestSurvivalTime: 145, bestKills: 22 });
+});
+
+runTest('Record updating logic tracks new high scores for time and kills', () => {
+  let records = { bestSurvivalTime: 0, bestKills: 0 };
+
+  const updateRecords = (currentStats) => {
+    const sTime = Math.floor(parseFloat(currentStats.survivalTime || 0));
+    const kills = parseInt(currentStats.zombiesKilled || 0, 10);
+    if (sTime > records.bestSurvivalTime) records.bestSurvivalTime = sTime;
+    if (kills > records.bestKills) records.bestKills = kills;
+    return records;
+  };
+
+  // Run 1: 95.4s, 12 kills
+  updateRecords({ survivalTime: 95.4, zombiesKilled: 12 });
+  assert.strictEqual(records.bestSurvivalTime, 95);
+  assert.strictEqual(records.bestKills, 12);
+
+  // Run 2: Shorter run (40s, 3 kills) -> preserves personal bests
+  updateRecords({ survivalTime: 40.0, zombiesKilled: 3 });
+  assert.strictEqual(records.bestSurvivalTime, 95);
+  assert.strictEqual(records.bestKills, 12);
+
+  // Run 3: More kills (28 kills, 80s) -> updates kills, preserves best time
+  updateRecords({ survivalTime: 80.0, zombiesKilled: 28 });
+  assert.strictEqual(records.bestSurvivalTime, 95);
+  assert.strictEqual(records.bestKills, 28);
+
+  // Run 4: Longer survival (180.2s, 10 kills) -> updates best time, preserves kills
+  updateRecords({ survivalTime: 180.2, zombiesKilled: 10 });
+  assert.strictEqual(records.bestSurvivalTime, 180);
+  assert.strictEqual(records.bestKills, 28);
 });
 
 console.log('\n================================');

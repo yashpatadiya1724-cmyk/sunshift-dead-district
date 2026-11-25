@@ -12,7 +12,7 @@ import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
 import { ColorGradingShader } from './ColorGradingShader.js';
 import { assets } from './Assets.js';
 
-import { CONFIG } from '../config.js';
+import { CONFIG, applyDifficulty } from '../config.js';
 import { events } from './Events.js';
 import { Input } from './Input.js';
 import { Sound } from './Sound.js';
@@ -64,7 +64,9 @@ export class Game {
       shiftsSurvived: 0
     };
 
+    this.records = this.loadRecords();
     this.settings = this.loadSettings();
+    applyDifficulty(this.settings.difficulty || 'NORMAL');
 
     // Auto-detect & Benchmark Tracking
     this.autoBenchmarkTimer = 0;
@@ -315,6 +317,51 @@ export class Game {
     }
   }
 
+  loadRecords() {
+    const defaults = {
+      bestSurvivalTime: 0,
+      bestKills: 0
+    };
+    try {
+      const saved = localStorage.getItem('sunshift_records');
+      return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
+    } catch {
+      return defaults;
+    }
+  }
+
+  saveRecords() {
+    try {
+      localStorage.setItem('sunshift_records', JSON.stringify(this.records));
+    } catch (e) {
+      console.warn('Could not save records', e);
+    }
+  }
+
+  updateRecords(stats = this.stats) {
+    if (!this.records) this.records = this.loadRecords();
+    let updated = false;
+    const sTime = Math.floor(parseFloat(stats.survivalTime || stats.timeSurvived || 0));
+    const kills = parseInt(stats.zombiesKilled || 0, 10);
+
+    if (sTime > (this.records.bestSurvivalTime || 0)) {
+      this.records.bestSurvivalTime = sTime;
+      updated = true;
+    }
+    if (kills > (this.records.bestKills || 0)) {
+      this.records.bestKills = kills;
+      updated = true;
+    }
+
+    if (updated) {
+      this.saveRecords();
+    }
+    if (this.menu && typeof this.menu.updateRecordsDisplay === 'function') {
+      this.menu.updateRecordsDisplay();
+    }
+    return this.records;
+  }
+
   loadSettings() {
     const defaults = {
       volume: 0.5,
@@ -323,13 +370,24 @@ export class Game {
       invertY: false,
       qualityMode: 'AUTO',
       quality: 'MEDIUM',
-      userSetQuality: false
+      userSetQuality: false,
+      difficulty: 'NORMAL'
     };
     try {
       const saved = localStorage.getItem('sunshift_settings');
       return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
     } catch {
       return defaults;
+    }
+  }
+
+  setDifficulty(diff) {
+    const d = (diff || 'NORMAL').toUpperCase();
+    this.settings.difficulty = d;
+    applyDifficulty(d);
+    this.saveSettings();
+    if (this.menu && typeof this.menu.updateDifficultyDisplay === 'function') {
+      this.menu.updateDifficultyDisplay();
     }
   }
 
@@ -855,6 +913,7 @@ export class Game {
   win(endingData = null) {
     this.state = GAME_STATES.WIN;
     this.stats.survivalTime = ((performance.now() - this.stats.startTime) / 1000).toFixed(1);
+    this.updateRecords(this.stats);
     if (document.exitPointerLock) document.exitPointerLock();
     this.input.reset();
 
@@ -895,6 +954,7 @@ export class Game {
   lose() {
     this.state = GAME_STATES.LOSE;
     this.stats.survivalTime = ((performance.now() - this.stats.startTime) / 1000).toFixed(1);
+    this.updateRecords(this.stats);
     if (document.exitPointerLock) document.exitPointerLock();
     this.input.reset();
 

@@ -7,9 +7,26 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    chunkSizeWarningLimit: 1200,
+    chunkSizeWarningLimit: 600,
     sourcemap: false,
-    minify: 'esbuild'
+    minify: 'esbuild',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/three/examples/jsm/postprocessing') ||
+              id.includes('node_modules/three/examples/jsm/shaders')) {
+            return 'three-postprocessing';
+          }
+          if (id.includes('node_modules/three/examples/jsm/loaders') ||
+              id.includes('node_modules/three/examples/jsm/utils')) {
+            return 'three-loaders';
+          }
+          if (id.includes('node_modules/three')) {
+            return 'three-core';
+          }
+        }
+      }
+    }
   },
   server: {
     port: 5173,

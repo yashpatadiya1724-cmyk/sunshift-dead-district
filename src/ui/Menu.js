@@ -30,13 +30,24 @@ export class Menu {
     this.sliderFov = document.getElementById('slider-fov');
     this.checkInvert = document.getElementById('check-invert');
     this.qualityBtns = document.querySelectorAll('.btn-quality');
+    this.diffBtns = document.querySelectorAll('.btn-diff');
+
+    // Records Elements
+    this.mainBestTime = document.getElementById('main-best-time');
+    this.mainBestKills = document.getElementById('main-best-kills');
+    this.gameoverBestTime = document.getElementById('gameover-best-time');
+    this.gameoverBestKills = document.getElementById('gameover-best-kills');
 
     // Keep track of previous menu to return cleanly
     this.settingsReturnTarget = this.mainMenu;
 
     this.bindButtons();
     this.bindSettings();
+    this.bindDifficulty();
+    this.initKeyboardNav();
     this.initEvents();
+    this.updateDifficultyDisplay();
+    this.updateRecordsDisplay();
 
     // Immediately display Main Menu (bypass blocking loading stall)
     this.showPanel(this.mainMenu);
@@ -48,6 +59,7 @@ export class Menu {
   }
 
   showPanel(panel) {
+    this.currentPanel = panel;
     const panels = [
       this.loadingScreen,
       this.mainMenu,
@@ -72,6 +84,14 @@ export class Menu {
 
     if (this.container) {
       this.container.style.display = panel ? 'flex' : 'none';
+    }
+
+    if (panel) {
+      if (panel === this.mainMenu) {
+        this.updateRecordsDisplay();
+        this.updateDifficultyDisplay();
+      }
+      this.focusFirstElement(panel);
     }
   }
 
@@ -235,6 +255,119 @@ export class Menu {
     });
   }
 
+  bindDifficulty() {
+    if (!this.diffBtns) return;
+    this.diffBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        try {
+          if (this.game && this.game.sound) {
+            if (typeof this.game.sound.playClick === 'function') this.game.sound.playClick();
+            else if (typeof this.game.sound.uiClick === 'function') this.game.sound.uiClick();
+          }
+        } catch {}
+        const diff = btn.dataset.difficulty;
+        if (this.game) {
+          if (typeof this.game.setDifficulty === 'function') {
+            this.game.setDifficulty(diff);
+          } else if (this.game.settings) {
+            this.game.settings.difficulty = diff;
+            this.game.saveSettings();
+          }
+        }
+        this.updateDifficultyDisplay();
+      });
+    });
+  }
+
+  updateDifficultyDisplay() {
+    const current = (this.game?.settings?.difficulty || 'NORMAL').toUpperCase();
+    if (this.diffBtns) {
+      this.diffBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.difficulty === current);
+      });
+    }
+  }
+
+  formatTime(seconds) {
+    const total = Math.floor(seconds || 0);
+    const m = Math.floor(total / 60).toString().padStart(2, '0');
+    const s = (total % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  initKeyboardNav() {
+    window.addEventListener('keydown', (e) => {
+      // Only process when a menu panel is active
+      if (!this.currentPanel || this.currentPanel.style.display === 'none') {
+        return;
+      }
+
+      const focusable = this.getFocusableElements(this.currentPanel);
+      if (focusable.length === 0) return;
+
+      const activeIdx = focusable.indexOf(document.activeElement);
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        if (document.activeElement?.type === 'range' && e.key === 'ArrowRight') {
+          return;
+        }
+        e.preventDefault();
+        const nextIdx = (activeIdx + 1) % focusable.length;
+        this.setElementFocus(focusable[nextIdx]);
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        if (document.activeElement?.type === 'range' && e.key === 'ArrowLeft') {
+          return;
+        }
+        e.preventDefault();
+        const prevIdx = (activeIdx - 1 + focusable.length) % focusable.length;
+        this.setElementFocus(focusable[prevIdx]);
+      } else if (e.key === 'Enter') {
+        if (document.activeElement && typeof document.activeElement.click === 'function') {
+          e.preventDefault();
+          document.activeElement.click();
+        }
+      }
+    });
+  }
+
+  getFocusableElements(panel) {
+    if (!panel) return [];
+    const elements = Array.from(panel.querySelectorAll('button:not([disabled]), input:not([disabled])'));
+    return elements.filter(el => {
+      return el.offsetParent !== null &&
+             window.getComputedStyle(el).display !== 'none' &&
+             window.getComputedStyle(el).visibility !== 'hidden';
+    });
+  }
+
+  focusFirstElement(panel) {
+    setTimeout(() => {
+      const focusable = this.getFocusableElements(panel);
+      if (focusable.length > 0) {
+        const primary = focusable.find(el => el.classList.contains('primary')) || focusable[0];
+        this.setElementFocus(primary);
+      }
+    }, 40);
+  }
+
+  setElementFocus(el) {
+    if (!el) return;
+    el.focus();
+    el.classList.add('keyboard-focus');
+    el.addEventListener('blur', () => el.classList.remove('keyboard-focus'), { once: true });
+  }
+
+  updateRecordsDisplay() {
+    const rec = this.game?.records || { bestSurvivalTime: 0, bestKills: 0 };
+    const timeFormatted = this.formatTime(rec.bestSurvivalTime);
+
+    if (this.mainBestTime) this.mainBestTime.textContent = timeFormatted;
+    if (this.mainBestKills) this.mainBestKills.textContent = rec.bestKills || 0;
+    if (this.gameoverBestTime) this.gameoverBestTime.textContent = timeFormatted;
+    if (this.gameoverBestKills) this.gameoverBestKills.textContent = rec.bestKills || 0;
+  }
+
   syncSettingsUI() {
     if (this.sliderVolume && this.game.settings.volume !== undefined) {
       this.sliderVolume.value = this.game.settings.volume;
@@ -366,5 +499,7 @@ export class Menu {
     if (this.statKills) this.statKills.textContent = stats.zombiesKilled || 0;
     if (this.statRelays) this.statRelays.textContent = `${stats.relaysCollected || 0} / 4`;
     if (this.statShifts) this.statShifts.textContent = stats.shiftsSurvived || 0;
+
+    this.updateRecordsDisplay();
   }
 }

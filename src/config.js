@@ -1,5 +1,38 @@
 import * as THREE from 'three';
 
+// Base Archetypes and Balance Constants for Scaling
+const BASE_ENEMIES = {
+  normal: { type: 'NORMAL', health: 70, daySpeed: 1.8, nightSpeed: 4.5, damage: 12, scale: 1.0, color: 0x3d5236, headColor: 0x5a7d4a, weight: 0.60 },
+  runner: { type: 'RUNNER', health: 40, daySpeed: 3.2, nightSpeed: 6.2, damage: 8, scale: 0.82, color: 0x6a3830, headColor: 0x8e4c40, weight: 0.25 },
+  brute: { type: 'BRUTE', health: 220, daySpeed: 1.1, nightSpeed: 2.8, damage: 25, scale: 1.45, color: 0x29253d, headColor: 0x3f3659, weight: 0.15 }
+};
+
+const BASE_ZOMBIE_COUNT = 20;
+const BASE_ZOMBIE_COUNTS = { LOW: 12, MEDIUM: 16, HIGH: 20 };
+const BASE_QUALITY_COUNTS = { LOW: 16, MEDIUM: 20, HIGH: 20, ULTRA: 24 };
+const BASE_NIGHT_EXTRA_SPAWNS = 6;
+
+export const DIFFICULTIES = {
+  EASY: {
+    name: 'EASY',
+    zombieCountMultiplier: 0.7,
+    healthMultiplier: 0.75,
+    damageMultiplier: 0.7
+  },
+  NORMAL: {
+    name: 'NORMAL',
+    zombieCountMultiplier: 1.0,
+    healthMultiplier: 1.0,
+    damageMultiplier: 1.0
+  },
+  HARD: {
+    name: 'HARD',
+    zombieCountMultiplier: 1.35,
+    healthMultiplier: 1.35,
+    damageMultiplier: 1.4
+  }
+};
+
 export const CONFIG = {
   // Player Base Settings
   player: {
@@ -221,5 +254,47 @@ export const CONFIG = {
       anisotropy: 8,
       pixelRatio: 1.5
     }
-  }
+  },
+
+  // Active Difficulty Settings
+  difficulty: DIFFICULTIES,
+  currentDifficulty: 'NORMAL'
 };
+
+export function applyDifficulty(diffKey = 'NORMAL') {
+  const key = (diffKey || 'NORMAL').toUpperCase();
+  const diff = DIFFICULTIES[key] || DIFFICULTIES.NORMAL;
+  CONFIG.currentDifficulty = key;
+
+  // Scale enemies health and damage
+  for (const type of ['normal', 'runner', 'brute']) {
+    if (CONFIG.enemies[type] && BASE_ENEMIES[type]) {
+      CONFIG.enemies[type].health = Math.round(BASE_ENEMIES[type].health * diff.healthMultiplier);
+      CONFIG.enemies[type].damage = Math.round(BASE_ENEMIES[type].damage * diff.damageMultiplier);
+    }
+  }
+
+  // Scale zombie counts
+  CONFIG.zombie.count = Math.round(BASE_ZOMBIE_COUNT * diff.zombieCountMultiplier);
+  if (CONFIG.zombie.counts) {
+    CONFIG.zombie.counts.LOW = Math.round(BASE_ZOMBIE_COUNTS.LOW * diff.zombieCountMultiplier);
+    CONFIG.zombie.counts.MEDIUM = Math.round(BASE_ZOMBIE_COUNTS.MEDIUM * diff.zombieCountMultiplier);
+    CONFIG.zombie.counts.HIGH = Math.round(BASE_ZOMBIE_COUNTS.HIGH * diff.zombieCountMultiplier);
+  }
+
+  // Scale quality preset zombie counts
+  if (CONFIG.quality) {
+    if (CONFIG.quality.LOW) CONFIG.quality.LOW.zombieCount = Math.round(BASE_QUALITY_COUNTS.LOW * diff.zombieCountMultiplier);
+    if (CONFIG.quality.MEDIUM) CONFIG.quality.MEDIUM.zombieCount = Math.round(BASE_QUALITY_COUNTS.MEDIUM * diff.zombieCountMultiplier);
+    if (CONFIG.quality.HIGH) CONFIG.quality.HIGH.zombieCount = Math.round(BASE_QUALITY_COUNTS.HIGH * diff.zombieCountMultiplier);
+    if (CONFIG.quality.ULTRA) CONFIG.quality.ULTRA.zombieCount = Math.round(BASE_QUALITY_COUNTS.ULTRA * diff.zombieCountMultiplier);
+  }
+
+  if (CONFIG.shift) {
+    CONFIG.shift.nightExtraSpawns = Math.max(2, Math.round(BASE_NIGHT_EXTRA_SPAWNS * diff.zombieCountMultiplier));
+  }
+
+  return diff;
+}
+
+CONFIG.applyDifficulty = applyDifficulty;
