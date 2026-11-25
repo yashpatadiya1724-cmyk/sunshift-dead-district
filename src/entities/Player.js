@@ -9,12 +9,36 @@ const _upAxis = new THREE.Vector3(0, 1, 0);
 const _testPosX = new THREE.Vector3();
 const _testPosZ = new THREE.Vector3();
 const _headPos = new THREE.Vector3();
+const _pivotPos = new THREE.Vector3();
 const _idealOffset = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 const _finalCamPos = new THREE.Vector3();
+const _desiredCamPos = new THREE.Vector3();
+const _camRight = new THREE.Vector3();
+const _camBackward = new THREE.Vector3();
 const _shootRaycaster = new THREE.Raycaster();
 const _shootForward = new THREE.Vector3();
 const _spreadForward = new THREE.Vector3();
+const _crosshairRaycaster = new THREE.Raycaster();
+const _crosshairTargetPoint = new THREE.Vector3();
+const _muzzlePos = new THREE.Vector3();
+const _bulletDir = new THREE.Vector3();
+const _targetVel = new THREE.Vector3();
+
+// Helper to move 2D vector towards target without allocation
+function moveTowards2D(current, targetX, targetZ, maxDelta) {
+  const dx = targetX - current.x;
+  const dz = targetZ - current.z;
+  const distSq = dx * dx + dz * dz;
+  if (distSq === 0 || (maxDelta >= 0 && distSq <= maxDelta * maxDelta)) {
+    current.x = targetX;
+    current.z = targetZ;
+    return;
+  }
+  const dist = Math.sqrt(distSq);
+  current.x += (dx / dist) * maxDelta;
+  current.z += (dz / dist) * maxDelta;
+}
 
 export class Player {
   constructor(scene, camera, input, sound, effects) {
@@ -30,18 +54,53 @@ export class Player {
     this.sprintMultiplier = CONFIG.player.sprintMultiplier;
     this.jumpStrength = CONFIG.player.jumpStrength;
     this.gravity = CONFIG.player.gravity;
-    this.camDistance = CONFIG.player.camDistance;
+    this.camDistance = CONFIG.movement?.camera?.defaultDistance || CONFIG.player.camDistance;
     this.maxShootingRange = CONFIG.player.maxShootingRange || 100;
     this.sensitivity = CONFIG.player.mouseSensitivity;
     this.invertY = false;
 
-    // UV Flare Cooldown
-    this.flareCooldownTimer = 0;
-    this.flareDuration = CONFIG.player.flareFreezeDuration;
-
+    // Movement Kinematics
+    this.velocity = new THREE.Vector3(0, 0, 0); // Horizontal XZ velocity
     this.velocityY = 0;
     this.isGrounded = true;
     this.walkTimer = 0;
+    this.acceleration = 0;
+    this.prevSpeed = 0;
+
+    // Coyote Time & Jump Buffer
+    this.coyoteTimer = 0;
+    this.jumpBufferTimer = 0;
+
+    // Stamina & Sprint
+    this.stamina = CONFIG.movement?.staminaMax || 5.0;
+    this.staminaRegenCooldown = 0;
+    this.isSprinting = false;
+
+    // Shift Dash
+    this.dashTimer = 0;
+    this.dashCooldownTimer = 0;
+    this.prevShiftDown = false;
+
+    // Over-The-Shoulder Camera & Aiming
+    this.isAiming = false;
+    this.currentCamDist = CONFIG.movement?.camera?.defaultDistance || 3.2;
+    this.currentOffsetRight = CONFIG.movement?.camera?.defaultOffsetRight || 0.7;
+    this.camPos = new THREE.Vector3();
+    this.baseFov = this.camera.fov || 75;
+    this.targetFov = this.baseFov;
+
+    // Procedural Animation & Lean / Squash
+    this.bodyLeanPitch = 0;
+    this.bodyLeanRoll = 0;
+    this.squashTimer = 0;
+
+    // F4 Debug Telemetry
+    this.showDebug = false;
+    this.accelHistory = []; // Rolling 3s window of acceleration samples
+
+    // UV Flare Cooldown
+    this.flareCooldownTimer = 0;
+    this.flareDuration = CONFIG.player.flareFreezeDuration;
 
     // Weapons Arsenal (Pistol, Shotgun, Assault Rifle)
     this.weaponList = [
@@ -136,6 +195,11 @@ export class Player {
       if (e.code === 'Digit3') this.switchWeapon(2);
       if (e.code === 'KeyR') this.startReload();
       if (e.code === 'KeyQ') this.triggerFlare();
+      if (e.code === 'F4' && import.meta.env.DEV) {
+        this.showDebug = !this.showDebug;
+        const dbgEl = document.getElementById('movement-debug-overlay');
+        if (dbgEl) dbgEl.style.display = this.showDebug ? 'block' : 'none';
+      }
     });
 
     window.addEventListener('wheel', (e) => {
@@ -260,6 +324,7 @@ export class Player {
     this.health = this.maxHealth;
     this.mesh.position.set(0, 0, 0);
     this.mesh.rotation.set(0, 0, 0);
+    this.velocity.set(0, 0, 0);
     this.velocityY = 0;
     this.isGrounded = true;
     this.yaw = 0;
@@ -268,6 +333,28 @@ export class Player {
     this.walkTimer = 0;
     this.flareCooldownTimer = 0;
     this.isReloading = false;
+
+    this.isAiming = false;
+    this.currentCamDist = CONFIG.movement?.camera?.defaultDistance || 3.2;
+    this.currentOffsetRight = CONFIG.movement?.camera?.defaultOffsetRight || 0.7;
+    this.camPos.set(0, 0, 0);
+    this.camera.fov = this.baseFov || 75;
+    this.camera.updateProjectionMatrix();
+
+    this.coyoteTimer = 0;
+    this.jumpBufferTimer = 0;
+    this.stamina = CONFIG.movement?.staminaMax || 5.0;
+    this.staminaRegenCooldown = 0;
+    this.isSprinting = false;
+    this.dashTimer = 0;
+    this.dashCooldownTimer = 0;
+    this.bodyLeanPitch = 0;
+    this.bodyLeanRoll = 0;
+    this.squashTimer = 0;
+    this.mesh.scale.set(1, 1, 1);
+
+    const crosshairEl = document.getElementById('crosshair');
+    if (crosshairEl) crosshairEl.classList.remove('aiming');
 
     this.weaponList = [
       { ...CONFIG.weapons.pistol, magAmmo: CONFIG.weapons.pistol.magSize },
@@ -308,17 +395,165 @@ export class Player {
   }
 
   update(dt, cityColliders, zombies, cityRayTargets = []) {
-    // 1. Mouse Look with Invert Y
+    const moveCfg = CONFIG.movement || {};
+    const camCfg = moveCfg.camera || {};
+
+    // 1. Mouse Look & Aiming State
     const mouseDelta = this.input.consumeMouseDelta();
     this.yaw -= mouseDelta.x * this.sensitivity;
     const ySign = this.invertY ? -1 : 1;
     this.pitch -= mouseDelta.y * this.sensitivity * ySign;
     this.pitch = Math.max(-0.4, Math.min(0.8, this.pitch));
 
-    // 2. Jump & Vertical Gravity
-    if (this.input.isKey('Space') && this.isGrounded) {
-      this.velocityY = this.jumpStrength;
-      this.isGrounded = false;
+    // Right Mouse Button = AIM
+    this.isAiming = this.input.isMouseDown(2);
+    const crosshairEl = document.getElementById('crosshair');
+    if (crosshairEl) {
+      crosshairEl.classList.toggle('aiming', this.isAiming);
+    }
+
+    // 2. Dash & Shift Handling (Tap = Dash, Hold = Sprint)
+    const shiftDown = this.input.isKey('ShiftLeft') || this.input.isKey('ShiftRight');
+    if (shiftDown && !this.prevShiftDown && !this.isAiming) {
+      if (this.dashCooldownTimer <= 0) {
+        // Trigger short dash
+        this.dashTimer = moveCfg.dashDuration || 0.25;
+        this.dashCooldownTimer = moveCfg.dashCooldown || 1.2;
+        this.stamina = Math.max(0, this.stamina - (moveCfg.dashStaminaCost || 1.0));
+        this.staminaRegenCooldown = moveCfg.staminaRegenDelay || 3.0;
+        if (this.sound && typeof this.sound.playDash === 'function') {
+          this.sound.playDash();
+        }
+      }
+    }
+    this.prevShiftDown = shiftDown;
+
+    if (this.dashCooldownTimer > 0) {
+      this.dashCooldownTimer = Math.max(0, this.dashCooldownTimer - dt);
+    }
+    const isDashing = this.dashTimer > 0;
+    if (isDashing) {
+      this.dashTimer = Math.max(0, this.dashTimer - dt);
+    }
+
+    // 3. Movement Inputs
+    let moveZ = 0;
+    let moveX = 0;
+    if (this.input.isKey('KeyW')) moveZ -= 1;
+    if (this.input.isKey('KeyS')) moveZ += 1;
+    if (this.input.isKey('KeyA')) moveX -= 1;
+    if (this.input.isKey('KeyD')) moveX += 1;
+    const isMoving = (moveX !== 0 || moveZ !== 0);
+
+    // 4. Sprint & Stamina Mechanics
+    const canSprint = shiftDown && !this.isAiming && isMoving && this.stamina > 0.1;
+    this.isSprinting = canSprint;
+
+    if (this.isSprinting && !isDashing) {
+      this.stamina = Math.max(0, this.stamina - dt * (moveCfg.staminaDrainRate || 1.0));
+      this.staminaRegenCooldown = moveCfg.staminaRegenDelay || 3.0;
+    } else if (!isDashing) {
+      if (this.staminaRegenCooldown > 0) {
+        this.staminaRegenCooldown = Math.max(0, this.staminaRegenCooldown - dt);
+      } else {
+        this.stamina = Math.min(moveCfg.staminaMax || 5.0, this.stamina + dt * (moveCfg.staminaRegenRate || 2.5));
+      }
+    }
+
+    // Update HUD Stamina Bar
+    const stamMax = moveCfg.staminaMax || 5.0;
+    const stamPct = Math.min(100, Math.max(0, (this.stamina / stamMax) * 100));
+    const stamBar = document.getElementById('stamina-bar');
+    const stamTxt = document.getElementById('stamina-text');
+    if (stamBar) stamBar.style.width = `${stamPct}%`;
+    if (stamTxt) stamTxt.innerText = `${Math.round(stamPct)}%`;
+
+    // 5. Target Top Speed & Acceleration/Deceleration Kinematics
+    let targetTopSpeed = this.speed;
+    if (isDashing) {
+      targetTopSpeed = this.speed * (moveCfg.dashSpeedMultiplier || 2.2);
+    } else if (this.isSprinting) {
+      targetTopSpeed = this.speed * this.sprintMultiplier;
+    } else if (this.isAiming) {
+      targetTopSpeed = this.speed * 0.65;
+    }
+
+    if (isMoving) {
+      _moveVector.set(moveX, 0, moveZ).normalize();
+      _moveVector.applyAxisAngle(_upAxis, this.yaw);
+      _targetVel.copy(_moveVector).multiplyScalar(targetTopSpeed);
+    } else {
+      _targetVel.set(0, 0, 0);
+    }
+
+    // Acceleration (0.2s to top speed) & Deceleration (0.1s to full stop)
+    const accelTime = moveCfg.accelerationTime || 0.2;
+    const decelTime = moveCfg.decelerationTime || 0.1;
+    const accelRate = targetTopSpeed / accelTime;
+    const decelRate = (this.speed * this.sprintMultiplier) / decelTime;
+    const currentRate = isMoving ? accelRate : decelRate;
+
+    moveTowards2D(this.velocity, _targetVel.x, _targetVel.z, currentRate * dt);
+
+    const horizontalSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
+    this.currentSpeed = horizontalSpeed;
+
+    // Track acceleration for debug
+    this.acceleration = (horizontalSpeed - this.prevSpeed) / Math.max(dt, 0.001);
+    this.prevSpeed = horizontalSpeed;
+    if (this.showDebug && import.meta.env.DEV) {
+      this.updateDebugTelemetry(horizontalSpeed, dt);
+    }
+
+    // 6. Smooth Model Turning vs Aim Facing
+    if (this.isAiming) {
+      // Aim mode: face camera direction immediately to strafe
+      this.mesh.rotation.y = this.yaw + Math.PI;
+    } else if (horizontalSpeed > 0.15) {
+      // Movement mode: smoothly turn body towards velocity direction over turnSmoothTime
+      const targetYaw = Math.atan2(this.velocity.x, this.velocity.z) + Math.PI;
+      let diff = targetYaw - this.mesh.rotation.y;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      const turnTime = moveCfg.turnSmoothTime || 0.1;
+      this.mesh.rotation.y += diff * Math.min(1.0, dt / turnTime);
+    }
+
+    // 7. Ground Collision & Movement Application
+    _testPosX.copy(this.mesh.position);
+    _testPosX.x += this.velocity.x * dt;
+    if (!this.checkCollisions(_testPosX, cityColliders)) {
+      this.mesh.position.x = _testPosX.x;
+    } else {
+      this.velocity.x = 0;
+    }
+
+    _testPosZ.copy(this.mesh.position);
+    _testPosZ.z += this.velocity.z * dt;
+    if (!this.checkCollisions(_testPosZ, cityColliders)) {
+      this.mesh.position.z = _testPosZ.z;
+    } else {
+      this.velocity.z = 0;
+    }
+
+    // 8. Coyote Time & Jump Buffer
+    if (this.isGrounded) {
+      this.coyoteTimer = moveCfg.coyoteTime || 0.1;
+    } else {
+      this.coyoteTimer = Math.max(0, this.coyoteTimer - dt);
+    }
+
+    if (this.input.isKey('Space')) {
+      if (this.isGrounded || this.coyoteTimer > 0) {
+        this.velocityY = this.jumpStrength;
+        this.isGrounded = false;
+        this.coyoteTimer = 0;
+      } else {
+        this.jumpBufferTimer = moveCfg.jumpBufferTime || 0.1;
+      }
+    }
+    if (this.jumpBufferTimer > 0) {
+      this.jumpBufferTimer = Math.max(0, this.jumpBufferTimer - dt);
     }
 
     if (!this.isGrounded) {
@@ -328,50 +563,49 @@ export class Player {
 
     if (this.mesh.position.y <= 0) {
       this.mesh.position.y = 0;
+      if (!this.isGrounded) {
+        this.isGrounded = true;
+        this.squashTimer = 0.16; // Landing impact squash
+        if (this.jumpBufferTimer > 0) {
+          this.velocityY = this.jumpStrength;
+          this.isGrounded = false;
+          this.jumpBufferTimer = 0;
+        }
+      }
       this.velocityY = 0;
-      this.isGrounded = true;
     }
 
-    // 3. Movement without runtime Vector3 allocation
-    let moveZ = 0;
-    let moveX = 0;
-    if (this.input.isKey('KeyW')) moveZ -= 1;
-    if (this.input.isKey('KeyS')) moveZ += 1;
-    if (this.input.isKey('KeyA')) moveX -= 1;
-    if (this.input.isKey('KeyD')) moveX += 1;
+    // Landing Squash
+    if (this.squashTimer > 0) {
+      this.squashTimer -= dt;
+      const factor = 1.0 - Math.sin((this.squashTimer / 0.16) * Math.PI) * 0.14;
+      this.mesh.scale.set(1.0 + (1.0 - factor) * 0.45, factor, 1.0 + (1.0 - factor) * 0.45);
+    } else {
+      this.mesh.scale.set(1, 1, 1);
+    }
 
-    _moveVector.set(moveX, 0, moveZ);
-    const isMoving = (moveX !== 0 || moveZ !== 0);
+    // 9. Procedural Body Lean & Limb Swings
+    const maxLeanSpeed = this.speed * this.sprintMultiplier;
+    const forwardLeanTarget = -Math.min(0.18, (horizontalSpeed / maxLeanSpeed) * 0.14);
+    const lateralSpeed = -Math.sin(this.yaw) * this.velocity.z + Math.cos(this.yaw) * this.velocity.x;
+    const rollLeanTarget = Math.max(-0.14, Math.min(0.14, (lateralSpeed / this.speed) * 0.08));
 
-    const isSprinting = this.input.isKey('ShiftLeft') || this.input.isKey('ShiftRight');
-    const currentSpeed = this.speed * (isSprinting ? this.sprintMultiplier : 1.0);
+    this.bodyLeanPitch = THREE.MathUtils.lerp(this.bodyLeanPitch, forwardLeanTarget, dt * 10);
+    this.bodyLeanRoll = THREE.MathUtils.lerp(this.bodyLeanRoll, rollLeanTarget, dt * 10);
+    this.mesh.rotation.x = this.bodyLeanPitch;
+    this.mesh.rotation.z = this.bodyLeanRoll;
 
-    if (isMoving) {
-      _moveVector.normalize();
-      _moveVector.applyAxisAngle(_upAxis, this.yaw);
-      _moveVector.multiplyScalar(currentSpeed * dt);
-
-      _testPosX.copy(this.mesh.position);
-      _testPosX.x += _moveVector.x;
-      if (!this.checkCollisions(_testPosX, cityColliders)) {
-        this.mesh.position.x = _testPosX.x;
-      }
-
-      _testPosZ.copy(this.mesh.position);
-      _testPosZ.z += _moveVector.z;
-      if (!this.checkCollisions(_testPosZ, cityColliders)) {
-        this.mesh.position.z = _testPosZ.z;
-      }
-
-      this.mesh.rotation.y = this.yaw + Math.PI;
-
-      // Leg swing & Footsteps
-      this.walkTimer += dt * (isSprinting ? 14 : 9);
+    if (horizontalSpeed > 0.2) {
+      const strideRate = this.isSprinting ? 14 : 9.5;
+      this.walkTimer += dt * strideRate * (horizontalSpeed / this.speed);
       const swing = Math.sin(this.walkTimer) * 0.65;
       this.leftLeg.rotation.x = swing;
       this.rightLeg.rotation.x = -swing;
-      this.leftArm.rotation.x = -swing * 0.7;
-      this.rightArm.rotation.x = swing * 0.7;
+
+      if (!this.isAiming) {
+        this.leftArm.rotation.x = -swing * 0.7;
+        this.rightArm.rotation.x = swing * 0.7;
+      }
 
       if (Math.abs(swing) > 0.6 && this.isGrounded && this.sound) {
         this.sound.playFootstep();
@@ -379,45 +613,89 @@ export class Player {
     } else {
       this.leftLeg.rotation.x = 0;
       this.rightLeg.rotation.x = 0;
-      this.leftArm.rotation.x = 0;
-      this.rightArm.rotation.x = 0;
+      if (!this.isAiming) {
+        this.leftArm.rotation.x = 0;
+        this.rightArm.rotation.x = 0;
+      }
     }
 
-    // 4. Camera Follow with Wall Raycast Occlusion Avoidance (Checked every 3rd frame)
-    _headPos.copy(this.mesh.position);
-    _headPos.y += 1.6;
+    if (this.isAiming) {
+      // Aim posture: arms and weapon point in pitch direction of camera
+      this.rightArm.rotation.x = -Math.PI * 0.48 + this.pitch;
+      this.leftArm.rotation.x = -Math.PI * 0.35 + this.pitch * 0.5;
+    }
 
-    const shakeOffset = this.effects ? this.effects.getShakeOffset(dt) : { x: 0, y: 0 };
-    _idealOffset.set(
-      Math.sin(this.yaw) * Math.cos(this.pitch) * this.camDistance,
-      Math.sin(this.pitch) * this.camDistance + 0.3,
-      Math.cos(this.yaw) * Math.cos(this.pitch) * this.camDistance
+    // 10. Over-The-Shoulder Camera with Spring Position Damping & Wall Occlusion
+    const shoulderH = camCfg.shoulderHeight || 1.55;
+    _pivotPos.copy(this.mesh.position);
+    _pivotPos.y += shoulderH;
+
+    const targetDist = this.isAiming ? (camCfg.aimDistance || 2.0) : (camCfg.defaultDistance || 3.2);
+    const targetOffset = this.isAiming ? (camCfg.aimOffsetRight || 0.9) : (camCfg.defaultOffsetRight || 0.7);
+
+    this.currentCamDist = THREE.MathUtils.lerp(this.currentCamDist, targetDist, dt * (camCfg.fovLerpSpeed || 10.0));
+    this.currentOffsetRight = THREE.MathUtils.lerp(this.currentOffsetRight, targetOffset, dt * (camCfg.fovLerpSpeed || 10.0));
+
+    // Right vector in camera yaw space
+    _camRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    // Backward vector from pitch & yaw
+    _camBackward.set(
+      Math.sin(this.yaw) * Math.cos(this.pitch),
+      Math.sin(this.pitch),
+      Math.cos(this.yaw) * Math.cos(this.pitch)
     );
 
-    _camDir.copy(_idealOffset).normalize();
+    // Compute ideal camera offset from shoulder pivot
+    _idealOffset.copy(_camRight).multiplyScalar(this.currentOffsetRight)
+      .addScaledVector(_camBackward, this.currentCamDist);
 
+    _camDir.copy(_idealOffset).normalize();
+    const idealDist = _idealOffset.length();
+
+    // Check Wall Raycast Occlusion Avoidance every 3rd frame
     this.camRaycastFrame = (this.camRaycastFrame || 0) + 1;
     if (this.camRaycastFrame % 3 === 0) {
-      this.camRaycaster.set(_headPos, _camDir);
-      this.camRaycaster.far = this.camDistance;
+      this.camRaycaster.set(_pivotPos, _camDir);
+      this.camRaycaster.far = idealDist;
 
       const hits = this.camRaycaster.intersectObjects(cityRayTargets, false);
       if (hits.length > 0) {
-        this.cachedCamDist = Math.max(1.0, hits[0].distance - 0.35);
+        this.cachedCamDist = Math.max(0.9, hits[0].distance - 0.3);
       } else {
-        this.cachedCamDist = this.camDistance;
+        this.cachedCamDist = idealDist;
       }
     }
-    const actualDist = this.cachedCamDist !== undefined ? this.cachedCamDist : this.camDistance;
+    const actualDist = this.cachedCamDist !== undefined ? this.cachedCamDist : idealDist;
+    _desiredCamPos.copy(_pivotPos).addScaledVector(_camDir, actualDist);
 
-    _finalCamPos.copy(_headPos).addScaledVector(_camDir, actualDist);
-    _finalCamPos.x += shakeOffset.x;
-    _finalCamPos.y += shakeOffset.y;
+    // Smooth position spring damping
+    if (this.camPos.lengthSq() === 0) this.camPos.copy(_desiredCamPos);
+    const dampingFactor = 1.0 - Math.exp(-(camCfg.posDamping || 14.0) * dt);
+    this.camPos.lerp(_desiredCamPos, dampingFactor);
 
-    this.camera.position.copy(_finalCamPos);
-    this.camera.lookAt(_headPos.x, _headPos.y - 0.1, _headPos.z);
+    // Add camera shake
+    const shakeOffset = this.effects ? this.effects.getShakeOffset(dt) : { x: 0, y: 0 };
+    this.camera.position.copy(this.camPos);
+    this.camera.position.x += shakeOffset.x;
+    this.camera.position.y += shakeOffset.y;
 
-    // 5. Flare Cooldown Tick
+    // Camera LookAt: align view with crosshair forward line
+    _headPos.copy(_pivotPos).addScaledVector(_camRight, this.currentOffsetRight * 0.35);
+    _headPos.addScaledVector(
+      _crosshairTargetPoint.set(-Math.sin(this.yaw) * Math.cos(this.pitch), -Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch)),
+      24.0
+    );
+    this.camera.lookAt(_headPos);
+
+    // Smooth FOV Updates (Aim Zoom, Sprint Kick, Dash Kick)
+    const fovDelta = (this.isAiming ? (camCfg.aimFovDelta || -12.0) : 0) +
+                     (this.isSprinting ? (camCfg.sprintFovDelta || 5.0) : 0) +
+                     (isDashing ? (camCfg.dashFovKick || 4.0) : 0);
+    this.targetFov = (this.baseFov || 75) + fovDelta;
+    this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, this.targetFov, dt * (camCfg.fovLerpSpeed || 10.0));
+    this.camera.updateProjectionMatrix();
+
+    // 11. Flare Cooldown Tick
     if (this.flareCooldownTimer > 0) {
       this.flareCooldownTimer = Math.max(0, this.flareCooldownTimer - dt);
       const cdPct = (1 - this.flareCooldownTimer / CONFIG.player.flareCooldown) * 100;
@@ -427,7 +705,7 @@ export class Player {
       if (txt) txt.innerText = this.flareCooldownTimer > 0 ? `${Math.ceil(this.flareCooldownTimer)}s` : 'READY';
     }
 
-    // 6. Reload Timer Tick
+    // 12. Reload Timer Tick
     if (this.isReloading) {
       this.reloadTimer -= dt;
       this.emitWeaponState();
@@ -444,7 +722,7 @@ export class Player {
       }
     }
 
-    // 7. Weapon Firing Logic
+    // 13. Weapon Firing Logic
     this.shootTimer -= dt;
     const w = this.getCurrentWeapon();
 
@@ -460,6 +738,64 @@ export class Player {
         }
       } else {
         this.startReload();
+      }
+    }
+  }
+
+  updateDebugTelemetry(speed, dt) {
+    const elSpeed = document.getElementById('dbg-speed');
+    const elState = document.getElementById('dbg-state');
+    const elStam = document.getElementById('dbg-stamina');
+    const elDash = document.getElementById('dbg-dash');
+    const elAim = document.getElementById('dbg-aim');
+    const canvas = document.getElementById('dbg-accel-canvas');
+
+    if (elSpeed) {
+      const kmh = (speed * 3.6).toFixed(1);
+      elSpeed.textContent = `${speed.toFixed(2)} m/s (${kmh} km/h)`;
+    }
+    if (elState) {
+      const state = this.dashTimer > 0 ? 'DASH'
+                  : this.isSprinting ? 'SPRINT'
+                  : !this.isGrounded ? 'IN-AIR'
+                  : speed > 0.2 ? 'WALK'
+                  : 'IDLE';
+      elState.textContent = state;
+    }
+    if (elStam) {
+      elStam.textContent = `${this.stamina.toFixed(1)} / ${(CONFIG.movement?.staminaMax || 5.0).toFixed(1)}s`;
+    }
+    if (elDash) {
+      elDash.textContent = this.dashCooldownTimer > 0 ? `${this.dashCooldownTimer.toFixed(1)}s` : 'READY';
+    }
+    if (elAim) {
+      elAim.textContent = this.isAiming ? 'AIMING (ZOOMED)' : 'OTS NORMAL';
+    }
+
+    if (canvas) {
+      this.accelHistory.push(Math.abs(this.acceleration));
+      if (this.accelHistory.length > 180) { // 3 seconds at 60Hz
+        this.accelHistory.shift();
+      }
+
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#06090e';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.strokeStyle = '#00e5ff';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        const maxVal = 60; // 60 m/s^2 scale
+        const step = canvas.width / Math.max(1, this.accelHistory.length - 1);
+        for (let i = 0; i < this.accelHistory.length; i++) {
+          const val = Math.min(this.accelHistory[i], maxVal);
+          const y = canvas.height - (val / maxVal) * (canvas.height - 6) - 3;
+          const x = i * step;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
       }
     }
   }
@@ -508,32 +844,69 @@ export class Player {
       else this.sound.playGunshot ? this.sound.playGunshot() : this.sound.gunshot();
     }
 
+    // World position of weapon muzzle
+    if (this.weaponMesh) {
+      this.weaponMesh.getWorldPosition(_muzzlePos);
+    } else {
+      _muzzlePos.copy(this.mesh.position);
+      _muzzlePos.y += 1.2;
+    }
+
     if (this.effects) {
       this.effects.addShake(w.name === 'SHOTGUN' ? 0.16 : 0.08);
-      _shootForward.set(0, 0, -1).applyAxisAngle(_upAxis, this.yaw);
-      this.effects.spawnMuzzleFlash(this.mesh.position, _shootForward);
+      _shootForward.set(-Math.sin(this.yaw) * Math.cos(this.pitch), -Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
+      this.effects.spawnMuzzleFlash(_muzzlePos, _shootForward);
     }
 
     const activeZombies = zombies.filter(z => !z.isDead);
     const activeZombieMeshes = activeZombies.map(z => z.mesh);
 
-    // Fire pellets with dedicated fast hierarchy separation
+    // Crosshair Center Target Point (Cast ray from camera screen center)
+    _crosshairRaycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
+    _crosshairRaycaster.far = this.maxShootingRange;
+
+    const crosshairZombieHits = _crosshairRaycaster.intersectObjects(activeZombieMeshes, true);
+    const crosshairCityHits = (cityRayTargets && cityRayTargets.length > 0)
+      ? _crosshairRaycaster.intersectObjects(cityRayTargets, false)
+      : [];
+
+    let mainAimPoint = null;
+    let mainAimHitZombie = null;
+
+    if (crosshairZombieHits.length > 0) {
+      mainAimPoint = crosshairZombieHits[0].point;
+      let obj = crosshairZombieHits[0].object;
+      while (obj) {
+        mainAimHitZombie = activeZombies.find(z => z.mesh === obj);
+        if (mainAimHitZombie) break;
+        obj = obj.parent;
+      }
+    }
+    if (crosshairCityHits.length > 0) {
+      if (!mainAimPoint || crosshairCityHits[0].distance < crosshairZombieHits[0]?.distance) {
+        mainAimPoint = crosshairCityHits[0].point;
+        mainAimHitZombie = null;
+      }
+    }
+    if (!mainAimPoint) {
+      mainAimPoint = _crosshairTargetPoint.copy(_crosshairRaycaster.ray.origin)
+        .addScaledVector(_crosshairRaycaster.ray.direction, this.maxShootingRange);
+    }
+
+    // Fire pellets: Trajectory from weapon muzzle to the crosshair-targeted point with spread
     for (let p = 0; p < w.pellets; p++) {
-      _spreadForward.set(
-        -Math.sin(this.yaw) * Math.cos(this.pitch) + (Math.random() - 0.5) * w.spread,
-        -Math.sin(this.pitch) + (Math.random() - 0.5) * w.spread,
-        -Math.cos(this.yaw) * Math.cos(this.pitch) + (Math.random() - 0.5) * w.spread
-      ).normalize();
+      _bulletDir.subVectors(mainAimPoint, _muzzlePos).normalize();
+      if (w.spread > 0) {
+        _bulletDir.x += (Math.random() - 0.5) * w.spread;
+        _bulletDir.y += (Math.random() - 0.5) * w.spread;
+        _bulletDir.z += (Math.random() - 0.5) * w.spread;
+        _bulletDir.normalize();
+      }
 
-      _headPos.copy(this.mesh.position);
-      _headPos.y += 1.6;
-
-      _shootRaycaster.set(_headPos, _spreadForward);
+      _shootRaycaster.set(_muzzlePos, _bulletDir);
       _shootRaycaster.far = this.maxShootingRange;
 
-      // 1. Check against active zombie rigs (recursive)
       const zombieHits = _shootRaycaster.intersectObjects(activeZombieMeshes, true);
-      // 2. Check against simple box proxies (flat, non-recursive, 12 triangles per box)
       const cityHits = (cityRayTargets && cityRayTargets.length > 0)
         ? _shootRaycaster.intersectObjects(cityRayTargets, false)
         : [];
@@ -554,7 +927,7 @@ export class Player {
       if (cityHits.length > 0) {
         if (!nearestHit || cityHits[0].distance < nearestHit.distance) {
           nearestHit = cityHits[0];
-          hitZombie = null; // City building/prop wall was hit first
+          hitZombie = null;
         }
       }
 

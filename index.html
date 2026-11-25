@@ -45,6 +45,20 @@
   <div id="fps-counter" style="display: none;">FPS: 60</div>
   <div id="toast-notification"></div>
 
+  <!-- Realtime Movement Telemetry (Toggle with F4 in DEV) -->
+  <div id="movement-debug-overlay" style="display: none;">
+    <div class="dbg-header">MOVEMENT TELEMETRY (F4)</div>
+    <div class="dbg-row"><span>Speed:</span> <b id="dbg-speed">0.0 m/s (0.0 km/h)</b></div>
+    <div class="dbg-row"><span>State:</span> <b id="dbg-state">IDLE</b></div>
+    <div class="dbg-row"><span>Stamina:</span> <b id="dbg-stamina">5.0 / 5.0s</b></div>
+    <div class="dbg-row"><span>Dash:</span> <b id="dbg-dash">READY</b></div>
+    <div class="dbg-row"><span>Camera:</span> <b id="dbg-aim">OTS NORMAL</b></div>
+    <div class="dbg-canvas-wrap">
+      <div class="dbg-graph-title">ACCELERATION (3.0s ROLLING)</div>
+      <canvas id="dbg-accel-canvas" width="220" height="60"></canvas>
+    </div>
+  </div>
+
   <!-- First-Time Tutorial Pop-up Hint -->
   <!-- Cinematic Prologue Intro Overlay -->
   <div id="intro-overlay" style="display: none;">
@@ -159,6 +173,15 @@
           <span id="health-text" class="hud-sublabel">100 / 100</span>
         </div>
         <div class="bar-container"><div id="health-bar" class="hp-high"></div></div>
+
+        <!-- Sprint Stamina Bar -->
+        <div class="hud-label-row stamina-label-row">
+          <span class="hud-label stamina-label">STAMINA</span>
+          <span id="stamina-text" class="hud-sublabel stamina-text">100%</span>
+        </div>
+        <div class="bar-container stamina-bar-wrap">
+          <div id="stamina-bar"></div>
+        </div>
       </div>
 
       <div class="hud-box weapon-box">

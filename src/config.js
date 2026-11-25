@@ -2,22 +2,22 @@ import * as THREE from 'three';
 
 // Base Archetypes and Balance Constants for Scaling
 const BASE_ENEMIES = {
-  normal: { type: 'NORMAL', health: 70, daySpeed: 1.8, nightSpeed: 4.5, damage: 12, scale: 1.0, color: 0x3d5236, headColor: 0x5a7d4a, weight: 0.60 },
-  runner: { type: 'RUNNER', health: 40, daySpeed: 3.2, nightSpeed: 6.2, damage: 8, scale: 0.82, color: 0x6a3830, headColor: 0x8e4c40, weight: 0.25 },
-  brute: { type: 'BRUTE', health: 220, daySpeed: 1.1, nightSpeed: 2.8, damage: 25, scale: 1.45, color: 0x29253d, headColor: 0x3f3659, weight: 0.15 }
+  normal: { type: 'NORMAL', health: 70, daySpeed: 1.8, nightSpeed: 5.2, damage: 16, scale: 1.0, color: 0x3d5236, headColor: 0x5a7d4a, weight: 0.60 },
+  runner: { type: 'RUNNER', health: 40, daySpeed: 3.2, nightSpeed: 7.2, damage: 12, scale: 0.82, color: 0x6a3830, headColor: 0x8e4c40, weight: 0.25 },
+  brute: { type: 'BRUTE', health: 240, daySpeed: 1.2, nightSpeed: 3.4, damage: 35, scale: 1.45, color: 0x29253d, headColor: 0x3f3659, weight: 0.15 }
 };
 
-const BASE_ZOMBIE_COUNT = 20;
-const BASE_ZOMBIE_COUNTS = { LOW: 12, MEDIUM: 16, HIGH: 20 };
-const BASE_QUALITY_COUNTS = { LOW: 16, MEDIUM: 20, HIGH: 20, ULTRA: 24 };
-const BASE_NIGHT_EXTRA_SPAWNS = 6;
+const BASE_ZOMBIE_COUNT = 24;
+const BASE_ZOMBIE_COUNTS = { LOW: 16, MEDIUM: 22, HIGH: 26 };
+const BASE_QUALITY_COUNTS = { LOW: 16, MEDIUM: 22, HIGH: 26, ULTRA: 28 };
+const BASE_NIGHT_EXTRA_SPAWNS = 8;
 
 export const DIFFICULTIES = {
   EASY: {
     name: 'EASY',
-    zombieCountMultiplier: 0.7,
-    healthMultiplier: 0.75,
-    damageMultiplier: 0.7
+    zombieCountMultiplier: 0.65,
+    healthMultiplier: 0.65,
+    damageMultiplier: 0.55
   },
   NORMAL: {
     name: 'NORMAL',
@@ -29,7 +29,7 @@ export const DIFFICULTIES = {
     name: 'HARD',
     zombieCountMultiplier: 1.35,
     healthMultiplier: 1.35,
-    damageMultiplier: 1.4
+    damageMultiplier: 1.45
   }
 };
 
@@ -41,11 +41,41 @@ export const CONFIG = {
     sprintMultiplier: 1.6,
     jumpStrength: 9.0,
     gravity: -22.0,
-    camDistance: 4.5,
+    camDistance: 3.2,
     mouseSensitivity: 0.0025,
     flareCooldown: 20.0,
     flareRadius: 12.0,
     flareFreezeDuration: 6.0
+  },
+
+  // Over-The-Shoulder Camera & Advanced Kinematic Movement Settings
+  movement: {
+    camera: {
+      shoulderHeight: 1.55,
+      defaultOffsetRight: 0.7,
+      defaultDistance: 3.2,
+      aimOffsetRight: 0.9,
+      aimDistance: 2.0,
+      aimFovDelta: -12.0,
+      sprintFovDelta: 5.0,
+      dashFovKick: 4.0,
+      posDamping: 14.0,
+      fovLerpSpeed: 10.0,
+      aimCrosshairScale: 0.7
+    },
+    accelerationTime: 0.2, // 0.2s to reach top speed
+    decelerationTime: 0.1, // 0.1s to come to full stop
+    turnSmoothTime: 0.1,   // 0.1s smooth body orientation
+    coyoteTime: 0.1,       // 0.1s grace window after leaving ground
+    jumpBufferTime: 0.1,   // 0.1s buffer before landing
+    staminaMax: 5.0,       // 5 seconds max sprint capacity
+    staminaDrainRate: 1.0, // 1.0 unit/s -> 5s total
+    staminaRegenDelay: 3.0,// 3.0s delay before regeneration
+    staminaRegenRate: 2.5, // units/s recovery
+    dashDuration: 0.25,    // 0.25s duration
+    dashSpeedMultiplier: 2.2, // speed surge during dash
+    dashCooldown: 1.2,     // 1.2s cooldown
+    dashStaminaCost: 1.0   // small stamina cost on dash
   },
 
   // Vehicle (Muscle Car) Settings
@@ -131,9 +161,9 @@ export const CONFIG = {
     agroRangeNight: 32.0
   },
   enemies: {
-    normal: { type: 'NORMAL', health: 70, daySpeed: 1.8, nightSpeed: 4.5, damage: 12, scale: 1.0, color: 0x3d5236, headColor: 0x5a7d4a, weight: 0.60 },
-    runner: { type: 'RUNNER', health: 40, daySpeed: 3.2, nightSpeed: 6.2, damage: 8, scale: 0.82, color: 0x6a3830, headColor: 0x8e4c40, weight: 0.25 },
-    brute: { type: 'BRUTE', health: 220, daySpeed: 1.1, nightSpeed: 2.8, damage: 25, scale: 1.45, color: 0x29253d, headColor: 0x3f3659, weight: 0.15 }
+    normal: { type: 'NORMAL', health: 70, daySpeed: 1.8, nightSpeed: 5.2, damage: 16, scale: 1.0, color: 0x3d5236, headColor: 0x5a7d4a, weight: 0.60 },
+    runner: { type: 'RUNNER', health: 40, daySpeed: 3.2, nightSpeed: 7.2, damage: 12, scale: 0.82, color: 0x6a3830, headColor: 0x8e4c40, weight: 0.25 },
+    brute: { type: 'BRUTE', health: 240, daySpeed: 1.2, nightSpeed: 3.4, damage: 35, scale: 1.45, color: 0x29253d, headColor: 0x3f3659, weight: 0.15 }
   },
 
   // Pickups

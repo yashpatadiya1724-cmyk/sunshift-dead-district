@@ -1,7 +1,7 @@
 export class Input {
   constructor() {
     this.keys = {};
-    this.mouse = { isDown: false, deltaX: 0, deltaY: 0 };
+    this.mouse = { isDown: false, isRightDown: false, deltaX: 0, deltaY: 0 };
     this.isLocked = false;
 
     if (typeof window !== 'undefined') {
@@ -15,14 +15,21 @@ export class Input {
 
       window.addEventListener('mousedown', (e) => {
         // Do NOT request pointer lock here; Game.js handles lock on state transitions
-        if (this.isLocked && e.button === 0) {
-          this.mouse.isDown = true;
+        if (this.isLocked) {
+          if (e.button === 0) this.mouse.isDown = true;
+          if (e.button === 2) this.mouse.isRightDown = true;
         }
       });
 
       window.addEventListener('mouseup', (e) => {
-        if (e.button === 0) {
-          this.mouse.isDown = false;
+        if (e.button === 0) this.mouse.isDown = false;
+        if (e.button === 2) this.mouse.isRightDown = false;
+      });
+
+      // Prevent right-click context menu during gameplay
+      window.addEventListener('contextmenu', (e) => {
+        if (this.isLocked) {
+          e.preventDefault();
         }
       });
 
@@ -31,6 +38,7 @@ export class Input {
           this.isLocked = !!document.pointerLockElement;
           if (!this.isLocked) {
             this.mouse.isDown = false;
+            this.mouse.isRightDown = false;
           }
         });
       }
@@ -49,6 +57,7 @@ export class Input {
   }
 
   isMouseDown(button = 0) {
+    if (button === 2) return !!this.mouse?.isRightDown;
     return !!this.mouse?.isDown;
   }
 
@@ -62,6 +71,7 @@ export class Input {
   reset() {
     this.keys = {};
     this.mouse.isDown = false;
+    this.mouse.isRightDown = false;
     this.mouse.deltaX = 0;
     this.mouse.deltaY = 0;
   }
