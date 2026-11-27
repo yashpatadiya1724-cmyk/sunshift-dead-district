@@ -19,13 +19,11 @@ The following third-party 3D models and HDRI environments are incorporated in SU
    - License: Creative Commons CC0 1.0 Universal (Public Domain)
    - Details: https://creativecommons.org/publicdomain/zero/1.0/
 
-3. Quaternius (Character & Animated Zombie Models)
-   - Asset: player.glb (Worker), zombie.glb (Punk)
-   - Kit: Modular Men / Survivors Pack
-   - Author: Quaternius (https://quaternius.com)
-   - Source URL: https://github.com/trebeljahr/quaternius-showcase
-   - License: Creative Commons CC0 1.0 Universal (Public Domain)
-   - Details: https://creativecommons.org/publicdomain/zero/1.0/
+3. Tripo AI via Manus (Character & Animated Zombie Models)
+   - Asset: player.glb (Tactical Survivor Combatant), zombie.glb (Undead Walker/Runner)
+   - Credit: Characters generated with Tripo AI via Manus (Nov 2026)
+   - Details: Rigged 3D characters with baked skeletal animations (walk, run, idle)
+   - Legacy models: Quaternius CC0 models backed up in public/models/characters/backup/
 
 4. Quaternius (Firearms & Weapons)
    - Asset: pistol.glb (Pistol_1), shotgun.glb (Shotgun_1), rifle.glb (AR_1)

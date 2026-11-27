@@ -89,10 +89,11 @@ npm run dev
 
 ## 🎨 Asset Attributions & Licenses
 
-*SUNSHIFT: Dead District* utilizes open-standard 3D assets, CC0 1.0 Universal models, and a robust zero-crash procedural fallback engine:
+*SUNSHIFT: Dead District* utilizes open-standard 3D assets, custom generated characters, and a robust zero-crash procedural fallback engine:
 
+- **Tripo AI via Manus:** Characters generated with Tripo AI via Manus (Nov 2026) — tactical combat survivor and animated undead entities.
 - **Kenney (CC0 1.0 Universal):** Modular city buildings, road network tiles, sidewalk pavements, and vehicle assets ([kenney.nl](https://kenney.nl)).
-- **Quaternius (CC0 1.0 Universal):** Stylized survivor character, animated undead packs, and modular firearm weaponry ([quaternius.com](https://quaternius.com)).
+- **Quaternius (CC0 1.0 Universal):** Modular firearm weaponry (pistol, shotgun, rifle) ([quaternius.com](https://quaternius.com)).
 - **Poly Haven (CC0 1.0 Universal):** 1K HDR atmospheric environment skies — Zwartkops Straight Afternoon & Zwinger Night ([polyhaven.com](https://polyhaven.com)).
 
 Full details and legal texts are available in [`public/LICENSES.txt`](./public/LICENSES.txt).

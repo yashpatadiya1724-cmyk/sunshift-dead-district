@@ -10,6 +10,7 @@ export class AssetManager {
     this.models = new Map();
     this.textures = new Map();
     this.animations = new Map();
+    this.clipMaps = new Map();
     this.fallbacks = new Set();
     this.isLoaded = false;
     this.loadingProgress = 0;
@@ -90,9 +91,29 @@ export class AssetManager {
                   }
                   this.models.set(item.id, gltf.scene);
                   if (gltf.animations && gltf.animations.length > 0) {
+                    // Requirement 3: Strip all .position and .scale tracks (keep ONLY .quaternion tracks)
+                    // to eliminate hip bounce and root motion
+                    for (const clip of gltf.animations) {
+                      clip.tracks = clip.tracks.filter(t => t.name.endsWith('.quaternion'));
+                    }
                     this.animations.set(item.id, gltf.animations);
+
+                    // Requirement 3: Map clip names in Assets.js: zombie idle/walk/run, survivor walk/run
+                    const map = {};
+                    for (const clip of gltf.animations) {
+                      const lower = clip.name.toLowerCase();
+                      if (lower.includes('walk')) map.walk = clip;
+                      else if (lower.includes('run')) map.run = clip;
+                      else if (lower.includes('idle')) map.idle = clip;
+                      else if (lower.includes('shoot')) map.shoot = clip;
+                      else if (lower.includes('hurt')) map.hurt = clip;
+                      else if (lower.includes('fall') || lower.includes('death')) map.fall = clip;
+                      map[clip.name] = clip;
+                    }
+                    this.clipMaps.set(item.id, map);
+
                     const clipNames = gltf.animations.map(a => a.name);
-                    console.info(`[Assets] ${item.id} clips:`, clipNames);
+                    console.info(`[Assets] ${item.id} clips (quaternion-only mapped):`, clipNames, Object.keys(map));
                   }
                   resolve(gltf);
                 },
@@ -550,6 +571,16 @@ export class AssetManager {
 
   get(id) {
     return this.models.get(id) || this.textures.get(id) || null;
+  }
+
+  getClipMap(id) {
+    return this.clipMaps.get(id) || {};
+  }
+
+  getClip(id, name) {
+    const map = this.clipMaps.get(id);
+    if (!map) return null;
+    return map[name.toLowerCase()] || map[name] || null;
   }
 
   getFallbacks() {

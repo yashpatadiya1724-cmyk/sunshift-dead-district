@@ -120,43 +120,33 @@ export class Zombie {
 
     this.mixer = null;
     this.actions = {};
+    this.currentAction = null;
+    this.attackAnimTimer = 0;
 
     // 1. Check if GLB Model Instance is available
     const zombieInstance = assets ? assets.getInstance('zombie') : null;
     if (zombieInstance) {
       this.mesh = zombieInstance;
-      this.leftArm = this.mesh.getObjectByName('leftArm');
-      this.rightArm = this.mesh.getObjectByName('rightArm');
-      this.leftLeg = this.mesh.getObjectByName('leftLeg');
-      this.rightLeg = this.mesh.getObjectByName('rightLeg');
+      this.leftArm = this.mesh.getObjectByName('leftArm') || this.mesh.getObjectByName('L_Forearm');
+      this.rightArm = this.mesh.getObjectByName('rightArm') || this.mesh.getObjectByName('R_Forearm');
+      this.leftLeg = this.mesh.getObjectByName('leftLeg') || this.mesh.getObjectByName('L_Calf');
+      this.rightLeg = this.mesh.getObjectByName('rightLeg') || this.mesh.getObjectByName('R_Calf');
 
       const rawClips = assets.animations.get('zombie') || [];
+      const clipMap = assets.getClipMap('zombie');
       if (rawClips.length > 0) {
         this.mixer = new THREE.AnimationMixer(this.mesh);
-        const clipNames = rawClips.map(c => c.name);
-        console.info(`[Zombie ${this.archetype.name}] Animation clips:`, clipNames);
 
-        const findClip = (pattern, fallbackIdx) => {
-          return rawClips.find(c => pattern.test(c.name)) || rawClips[fallbackIdx % rawClips.length];
-        };
-
-        const idleClip = findClip(/idle/i, 0);
-        const walkClip = findClip(/walk/i, 1);
-        const runClip = findClip(/run/i, 2);
-        const attackClip = findClip(/attack|hit|strike|punch/i, 3);
-        const deathClip = findClip(/death|die|fall/i, 4);
+        const walkClip = clipMap.walk || rawClips.find(c => /walk/i.test(c.name)) || rawClips[0];
+        const runClip = clipMap.run || rawClips.find(c => /run/i.test(c.name)) || walkClip;
+        const idleClip = clipMap.idle || rawClips.find(c => /idle/i.test(c.name)) || walkClip;
 
         if (idleClip) this.actions.idle = this.mixer.clipAction(idleClip);
         if (walkClip) this.actions.walk = this.mixer.clipAction(walkClip);
         if (runClip) this.actions.run = this.mixer.clipAction(runClip);
-        if (attackClip) this.actions.attack = this.mixer.clipAction(attackClip);
-        if (deathClip) {
-          this.actions.death = this.mixer.clipAction(deathClip);
-          this.actions.death.clampWhenFinished = true;
-          this.actions.death.loop = THREE.LoopOnce;
-        }
 
-        if (this.actions.walk) this.actions.walk.play();
+        this.currentAction = this.actions.walk;
+        if (this.currentAction) this.currentAction.play();
       }
 
       // Shared Archetype Material for GLB SkinnedMesh (1 single material per archetype)
@@ -234,8 +224,9 @@ export class Zombie {
       this.mesh.add(this.rightLeg);
     }
 
-    // Apply Archetype Scale Factor
-    const s = this.archetype.scale;
+    // Apply Archetype Scale Factor (Requirement 4: Model height 1.0 -> Normal 1.8; Runner/Brute scale from CONFIG)
+    const baseZombieScale = 1.8;
+    const s = baseZombieScale * (this.archetype.scale || 1.0);
     this.mesh.scale.set(s, s, s);
 
     this.mesh.position.copy(position);
@@ -276,8 +267,30 @@ export class Zombie {
     }
   }
 
-  updateAnimation(dt) {
+  updateAnimation(dt, isNight = false, currentSpeed = 0, isMoving = true) {
     if (this.isDead || this.frozenTimer > 0) return;
+
+    // Requirement 5: Zombie: din me walk, raat me run, ruke hue idle. Crossfade 0.2 second. timeScale = asli speed / clip ki speed.
+    if (this.mixer) {
+      let targetAction = this.actions.idle;
+      if (isMoving && currentSpeed > 0.1) {
+        targetAction = isNight ? (this.actions.run || this.actions.walk) : this.actions.walk;
+      }
+
+      if (targetAction && this.currentAction !== targetAction) {
+        if (this.currentAction) {
+          this.currentAction.crossFadeTo(targetAction, 0.2, true);
+        }
+        targetAction.play();
+        this.currentAction = targetAction;
+      }
+
+      // timeScale = actual speed / clip speed
+      if (this.currentAction) {
+        const nominalSpeed = isNight ? (this.archetype.nightSpeed || 5.2) : (this.archetype.daySpeed || 1.8);
+        this.currentAction.timeScale = isMoving ? Math.max(0.2, currentSpeed / nominalSpeed) : 1.0;
+      }
+    }
 
     // Animation budget tiers: FROZEN = 0 Hz, THROTTLED_15HZ = 15 Hz, FULL = full 60 Hz
     if (this.animBudgetTier === 'FROZEN') {
@@ -438,15 +451,22 @@ export class Zombie {
       const inView = frustum ? frustum.containsPoint(this.mesh.position) : true;
       if (inView && horizontalDist <= 40) {
         this.walkTimer += dt * (isNight ? 10 : 6);
-        this.updateAnimation(dt);
+        this.updateAnimation(dt, isNight, currentSpeed, true);
       }
     } else {
       if (this.leftLeg) this.leftLeg.rotation.x = 0;
       if (this.rightLeg) this.rightLeg.rotation.x = 0;
-      if (this.actions?.walk && this.actions.walk.isRunning()) {
-        this.actions.walk.stop();
-        if (this.actions.idle) this.actions.idle.play();
-      }
+      this.updateAnimation(dt, isNight, 0, false);
+    }
+
+    // Procedural attack forward lean
+    if (this.attackAnimTimer > 0) {
+      this.attackAnimTimer -= dt;
+      const progress = 1 - (this.attackAnimTimer / 0.35);
+      const lean = Math.sin(progress * Math.PI) * 0.45;
+      this.mesh.rotation.x = lean;
+    } else if (!this.isDead) {
+      this.mesh.rotation.x = 0;
     }
 
     // Attack Player Logic
@@ -460,6 +480,7 @@ export class Zombie {
   }
 
   attack(player) {
+    this.attackAnimTimer = 0.35;
     if (this.actions?.attack) {
       this.actions.attack.reset().play();
     }
@@ -523,14 +544,16 @@ export class Zombie {
       this.sound.zombieDeath();
     }
 
-    if (this.actions?.death) {
+    if (this.actions) {
       if (this.actions.walk) this.actions.walk.stop();
       if (this.actions.run) this.actions.run.stop();
-      this.actions.death.reset().play();
-    } else {
-      this.mesh.rotation.x = -Math.PI / 2;
-      this.mesh.position.y = 0.2;
+      if (this.actions.idle) this.actions.idle.stop();
+      if (this.actions.attack) this.actions.attack.stop();
     }
+
+    // Requirement 5: procedural death (-90 degree fall down and sink slightly into ground)
+    this.mesh.rotation.x = -Math.PI / 2;
+    this.mesh.position.y = -0.2;
 
     events.emit('zombieKilled', this);
   }

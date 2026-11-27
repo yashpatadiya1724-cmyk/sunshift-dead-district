@@ -121,14 +121,44 @@ export class Player {
 
     this.camRaycaster = new THREE.Raycaster();
 
+    this.mixer = null;
+    this.actions = {};
+    this.currentAnimState = 'idle';
+
     // Instance Character Hierarchy
     const characterInstance = assets.getInstance('player');
     if (characterInstance) {
       this.mesh = characterInstance;
-      this.leftArm = this.mesh.getObjectByName('leftArm') || this.createLimb(-0.55, 1.15, 0);
-      this.rightArm = this.mesh.getObjectByName('rightArm') || this.createLimb(0.55, 1.15, 0);
-      this.leftLeg = this.mesh.getObjectByName('leftLeg') || this.createLimb(-0.24, 0.48, 0);
-      this.rightLeg = this.mesh.getObjectByName('rightLeg') || this.createLimb(0.24, 0.48, 0);
+      // Requirement 4: Scale: model height 1.0 hai. Player aur Normal zombie ke liye 1.8 se multiply karo.
+      this.mesh.scale.set(1.8, 1.8, 1.8);
+
+      this.rHandBone = this.mesh.getObjectByName('R_Hand');
+      this.leftArm = this.mesh.getObjectByName('leftArm') || this.mesh.getObjectByName('L_Forearm') || this.createLimb(-0.55, 1.15, 0);
+      this.rightArm = this.rHandBone || this.mesh.getObjectByName('rightArm') || this.createLimb(0.55, 1.15, 0);
+      this.leftLeg = this.mesh.getObjectByName('leftLeg') || this.mesh.getObjectByName('L_Calf') || this.createLimb(-0.24, 0.48, 0);
+      this.rightLeg = this.mesh.getObjectByName('rightLeg') || this.mesh.getObjectByName('R_Calf') || this.createLimb(0.24, 0.48, 0);
+
+      // Setup AnimationMixer & Actions for Survivor
+      const rawClips = assets.animations.get('player') || [];
+      const clipMap = assets.getClipMap('player');
+      if (rawClips.length > 0) {
+        this.mixer = new THREE.AnimationMixer(this.mesh);
+        const walkClip = clipMap.walk || rawClips.find(c => /walk/i.test(c.name)) || rawClips[0];
+        const runClip = clipMap.run || rawClips.find(c => /run/i.test(c.name)) || walkClip;
+        const idleClip = clipMap.idle || rawClips.find(c => /idle/i.test(c.name)) || walkClip;
+
+        if (walkClip) this.actions.walk = this.mixer.clipAction(walkClip);
+        if (runClip) this.actions.run = this.mixer.clipAction(runClip);
+        if (idleClip) this.actions.idle = this.mixer.clipAction(idleClip);
+
+        // Requirement 5: survivor idle = walk clip ka pehla frame (paused)
+        if (this.actions.walk) {
+          this.actions.walk.play();
+          this.actions.walk.paused = true;
+          this.actions.walk.time = 0;
+          this.currentAction = this.actions.walk;
+        }
+      }
     } else {
       this.mesh = new THREE.Group();
       this.buildDefaultRig();
@@ -257,8 +287,10 @@ export class Player {
 
   updateHandWeaponModel() {
     const w = this.getCurrentWeapon();
-    if (this.weaponMesh && this.rightArm) {
-      this.rightArm.remove(this.weaponMesh);
+    const rHand = this.rHandBone || (this.mesh ? this.mesh.getObjectByName('R_Hand') : null);
+    if (this.weaponMesh) {
+      if (this.weaponMesh.parent) this.weaponMesh.parent.remove(this.weaponMesh);
+      else if (this.rightArm) this.rightArm.remove(this.weaponMesh);
     }
 
     const assetId = w.name.toLowerCase().includes('pistol') ? 'weapon_pistol'
@@ -268,17 +300,30 @@ export class Player {
     const modelInstance = assets ? assets.getInstance(assetId) : null;
     if (modelInstance) {
       this.weaponMesh = modelInstance;
-      this.weaponMesh.position.set(0, -0.38, 0.22);
-      this.weaponMesh.rotation.set(0, 0, 0);
-      this.rightArm.add(this.weaponMesh);
+      if (rHand) {
+        // Requirement 6: Weapon R_Hand bone se attach karo aur haath me sahi dikhe
+        this.weaponMesh.scale.set(0.65, 0.65, 0.65);
+        this.weaponMesh.position.set(0.02, 0.06, 0.08);
+        this.weaponMesh.rotation.set(-Math.PI * 0.45, Math.PI, 0);
+        rHand.add(this.weaponMesh);
+      } else if (this.rightArm) {
+        this.weaponMesh.position.set(0, -0.38, 0.22);
+        this.weaponMesh.rotation.set(0, 0, 0);
+        this.rightArm.add(this.weaponMesh);
+      }
     } else {
       this.weaponMesh = new THREE.Mesh(
         new THREE.BoxGeometry(w.size[0], w.size[1], w.size[2]),
         new THREE.MeshStandardMaterial({ color: w.color, roughness: 0.35, metalness: 0.8 })
       );
-      this.weaponMesh.position.set(0, -0.35, w.size[2] * 0.5);
-      this.weaponMesh.castShadow = true;
-      this.rightArm.add(this.weaponMesh);
+      if (rHand) {
+        this.weaponMesh.position.set(0, 0.05, 0.08);
+        rHand.add(this.weaponMesh);
+      } else if (this.rightArm) {
+        this.weaponMesh.position.set(0, -0.35, w.size[2] * 0.5);
+        this.weaponMesh.castShadow = true;
+        this.rightArm.add(this.weaponMesh);
+      }
     }
   }
 
@@ -356,7 +401,7 @@ export class Player {
     this.bodyLeanPitch = 0;
     this.bodyLeanRoll = 0;
     this.squashTimer = 0;
-    this.mesh.scale.set(1, 1, 1);
+    this.mesh.scale.set(1.8, 1.8, 1.8);
 
     const crosshairEl = document.getElementById('crosshair');
     if (crosshairEl) crosshairEl.classList.remove('aiming');
@@ -557,7 +602,7 @@ export class Player {
       this.mesh.rotation.y = this.yaw + Math.PI;
     } else if (horizontalSpeed > 0.15) {
       // Movement mode: smoothly turn body towards velocity direction over turnSmoothTime
-      const targetYaw = Math.atan2(this.velocity.x, this.velocity.z) + Math.PI;
+      const targetYaw = Math.atan2(this.velocity.x, this.velocity.z);
       let diff = targetYaw - this.mesh.rotation.y;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
@@ -622,15 +667,16 @@ export class Player {
     }
 
     // Landing Squash
+    const basePlayerScale = 1.8;
     if (this.squashTimer > 0) {
       this.squashTimer -= dt;
       const factor = 1.0 - Math.sin((this.squashTimer / 0.16) * Math.PI) * 0.14;
-      this.mesh.scale.set(1.0 + (1.0 - factor) * 0.45, factor, 1.0 + (1.0 - factor) * 0.45);
+      this.mesh.scale.set(basePlayerScale * (1.0 + (1.0 - factor) * 0.45), basePlayerScale * factor, basePlayerScale * (1.0 + (1.0 - factor) * 0.45));
     } else {
-      this.mesh.scale.set(1, 1, 1);
+      this.mesh.scale.set(basePlayerScale, basePlayerScale, basePlayerScale);
     }
 
-    // 9. Procedural Body Lean & Limb Swings
+    // 9. Skeletal Animation & Procedural Leans
     const maxLeanSpeed = this.speed * this.sprintMultiplier;
     const forwardLeanTarget = -Math.min(0.18, (horizontalSpeed / maxLeanSpeed) * 0.14);
     const lateralSpeed = -Math.sin(this.yaw) * this.velocity.z + Math.cos(this.yaw) * this.velocity.x;
@@ -641,27 +687,95 @@ export class Player {
     this.mesh.rotation.x = this.bodyLeanPitch;
     this.mesh.rotation.z = this.bodyLeanRoll;
 
-    if (horizontalSpeed > 0.2) {
+    // Requirement 5: survivor idle = walk clip ka pehla frame (paused), chalte waqt walk, sprint par run. Crossfade 0.2 second. timeScale = asli speed / clip ki speed.
+    if (this.mixer) {
+      let targetState = 'idle';
+      if (horizontalSpeed > 0.2) {
+        targetState = this.isSprinting ? 'run' : 'walk';
+      }
+
+      if (this.currentAnimState !== targetState) {
+        const prevAction = this.currentAction;
+        if (targetState === 'idle') {
+          const targetAction = this.actions.walk;
+          if (targetAction) {
+            targetAction.paused = false;
+            if (prevAction && prevAction !== targetAction) {
+              prevAction.crossFadeTo(targetAction, 0.2, true);
+            }
+            targetAction.play();
+            targetAction.time = 0;
+            targetAction.timeScale = 0;
+            targetAction.paused = true;
+            this.currentAction = targetAction;
+          }
+        } else if (targetState === 'walk') {
+          const targetAction = this.actions.walk;
+          if (targetAction) {
+            targetAction.paused = false;
+            if (prevAction && prevAction !== targetAction) {
+              prevAction.crossFadeTo(targetAction, 0.2, true);
+            }
+            targetAction.play();
+            this.currentAction = targetAction;
+          }
+        } else if (targetState === 'run') {
+          const targetAction = this.actions.run || this.actions.walk;
+          if (targetAction) {
+            targetAction.paused = false;
+            if (prevAction && prevAction !== targetAction) {
+              prevAction.crossFadeTo(targetAction, 0.2, true);
+            }
+            targetAction.play();
+            this.currentAction = targetAction;
+          }
+        }
+        this.currentAnimState = targetState;
+      }
+
+      // timeScale = asli speed / clip ki speed
+      if (this.currentAction && !this.currentAction.paused) {
+        if (this.currentAnimState === 'walk') {
+          this.currentAction.timeScale = Math.max(0.3, horizontalSpeed / (this.speed * 0.5));
+        } else if (this.currentAnimState === 'run') {
+          this.currentAction.timeScale = Math.max(0.3, horizontalSpeed / (this.speed * this.sprintMultiplier * 0.7));
+        }
+      }
+
+      this.mixer.update(dt);
+    } else {
+      // Procedural limb swings fallback for box-mesh testing
+      if (horizontalSpeed > 0.2) {
+        const strideRate = this.isSprinting ? 14 : 9.5;
+        this.walkTimer += dt * strideRate * (horizontalSpeed / this.speed);
+        const swing = Math.sin(this.walkTimer) * 0.65;
+        if (this.leftLeg) this.leftLeg.rotation.x = swing;
+        if (this.rightLeg) this.rightLeg.rotation.x = -swing;
+
+        if (!this.isAiming) {
+          if (this.leftArm) this.leftArm.rotation.x = -swing * 0.7;
+          if (this.rightArm) this.rightArm.rotation.x = swing * 0.7;
+        }
+      } else {
+        if (this.leftLeg) this.leftLeg.rotation.x = 0;
+        if (this.rightLeg) this.rightLeg.rotation.x = 0;
+        if (!this.isAiming) {
+          if (this.leftArm) this.leftArm.rotation.x = 0;
+          if (this.rightArm) this.rightArm.rotation.x = 0;
+        }
+      }
+    }
+
+    if (horizontalSpeed > 0.2 && this.isGrounded && this.sound) {
       const strideRate = this.isSprinting ? 14 : 9.5;
       this.walkTimer += dt * strideRate * (horizontalSpeed / this.speed);
-      const swing = Math.sin(this.walkTimer) * 0.65;
-      this.leftLeg.rotation.x = swing;
-      this.rightLeg.rotation.x = -swing;
-
-      if (!this.isAiming) {
-        this.leftArm.rotation.x = -swing * 0.7;
-        this.rightArm.rotation.x = swing * 0.7;
-      }
-
-      if (Math.abs(swing) > 0.6 && this.isGrounded && this.sound) {
-        this.sound.playFootstep();
-      }
-    } else {
-      this.leftLeg.rotation.x = 0;
-      this.rightLeg.rotation.x = 0;
-      if (!this.isAiming) {
-        this.leftArm.rotation.x = 0;
-        this.rightArm.rotation.x = 0;
+      if (Math.sin(this.walkTimer) > 0.9) {
+        if (!this._footstepPlayed) {
+          this.sound.playFootstep();
+          this._footstepPlayed = true;
+        }
+      } else {
+        this._footstepPlayed = false;
       }
     }
 
