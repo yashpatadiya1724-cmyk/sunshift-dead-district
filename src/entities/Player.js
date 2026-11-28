@@ -1230,7 +1230,7 @@ export class Player {
       if (this.effects) this.effects.setLowHealthEffect(true);
     }
 
-    events.emit('playerDamaged', { health: this.health, maxHealth: this.maxHealth });
+    events.emit('playerHurt', { amount, from: sourcePos, health: this.health });
 
     if (this.health <= 0) {
       this.die();
