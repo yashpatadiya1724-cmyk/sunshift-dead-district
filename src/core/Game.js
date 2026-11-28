@@ -16,6 +16,7 @@ import { CONFIG, applyDifficulty } from '../config.js';
 import { events } from './Events.js';
 import { Input } from './Input.js';
 import { Sound } from './Sound.js';
+import { ScoreSystem } from './ScoreSystem.js';
 import { Effects } from './Effects.js';
 import { Player } from '../entities/Player.js';
 import { Zombie } from '../entities/Zombie.js';
@@ -91,8 +92,8 @@ export class Game {
     this.tutorialSteps = [
       { tag: 'TUTORIAL (1/5)', msg: 'Use [W, A, S, D] to move and hold [SHIFT] to sprint.' },
       { tag: 'TUTORIAL (2/5)', msg: 'Keys [1, 2, 3] switch weapons (Pistol, Shotgun, Rifle). Press [R] to reload.' },
-      { tag: 'TUTORIAL (3/5)', msg: 'Collect all 4 yellow street Relays to power the central Evac Tower.' },
-      { tag: 'TUTORIAL (4/5)', msg: 'Beware the SHIFT! In Night Shift, infected sprint and extra zombies spawn.' },
+      { tag: 'TUTORIAL (3/5)', msg: 'Relays wake only at NIGHT. Collect all 4 to power the central Evac Tower.' },
+      { tag: 'TUTORIAL (4/5)', msg: 'Press [V] to force a SUN SHIFT. At night relays wake, but infected sprint.' },
       { tag: 'TUTORIAL (5/5)', msg: 'Press [Q] for UV Flare to freeze enemies. Walk up to the muscle car and press [F] to drive!' }
     ];
 
@@ -273,6 +274,9 @@ export class Game {
           this.shift.triggerShift();
         }
       }
+      if (e.code === 'KeyV' && !e.repeat) {
+        this.tryManualShift();
+      }
       if (e.code === 'F3') {
         this.showFps = !this.showFps;
         if (this.fpsCounterEl) {
@@ -286,9 +290,12 @@ export class Game {
 
     document.addEventListener('pointerlockchange', () => {
       if (!document.pointerLockElement && this.state === GAME_STATES.PLAYING) {
-        if (this.input && this.input.isLocked) {
-          this.pause();
-        }
+        this.pause();
+      }
+    });
+    this.renderer.domElement.addEventListener('click', () => {
+      if (this.state === GAME_STATES.PLAYING && !document.pointerLockElement) {
+        this.requestPointerLockSafe();
       }
     });
 
@@ -598,9 +605,14 @@ export class Game {
   }
 
   setupEvents() {
+    this.score = new ScoreSystem();
+    events.on('playerHurt', () => this.score.breakCombo());
     // 1. Zombie Killed -> increment stats & spawn pickup drop
     events.on('zombieKilled', (zombie) => {
       this.stats.zombiesKilled++;
+      if (this.state === GAME_STATES.PLAYING) {
+        this.score.addKill(zombie?.archetype?.type, this.shift.isNight);
+      }
       if (zombie && zombie.mesh && this.pickups) {
         this.pickups.spawnDrop(zombie.mesh.position);
       }
@@ -709,12 +721,21 @@ export class Game {
   }
 
   spawnCustomZombie(pos, type = 'NORMAL') {
+    // Mission zombies must always appear: at the cap, remove the farthest ambient zombie
     if (this.getActiveAliveCount() >= this.getMaxAlive()) {
-      this.spawnQueue.push({ type: 'CUSTOM', pos, typeName: type });
-      return null;
+      const p = this.player.mesh.position;
+      let farthest = null;
+      for (const other of this.zombies) {
+        if (other.isDead || other.isRemoved || other.isMission) continue;
+        if (!farthest || other.mesh.position.distanceToSquared(p) > farthest.mesh.position.distanceToSquared(p)) {
+          farthest = other;
+        }
+      }
+      if (farthest) farthest.destroy();
     }
     const archetype = CONFIG.enemies[type.toLowerCase()] || CONFIG.enemies.normal;
     const z = new Zombie(this.scene, pos, this.sound, archetype, false);
+    z.isMission = true;
     this.zombies.push(z);
     return z;
   }
@@ -829,7 +850,7 @@ export class Game {
     this.autoDetectChecked = false;
     this.autoDetectFrames = 0;
     this.autoDetectTotalTime = 0;
-    this.noise = 0;
+    this.resetWorld();
     this.input.reset();
 
     this.playIntro(() => {
@@ -844,6 +865,7 @@ export class Game {
   }
 
   retryFromCheckpoint() {
+    this.score.applyRetryPenalty();
     this.clearExtraNightZombies();
     this.noise = 0;
 
@@ -902,8 +924,56 @@ export class Game {
     events.emit('stateChange', this.state);
   }
 
-  restart() {
+  tryManualShift() {
+    if (this.state !== GAME_STATES.PLAYING || this.manualShiftCooldown > 0) return;
+    this.manualShiftCooldown = CONFIG.shift.manualCooldown;
+    this.shift.triggerShift();
+    // The shift pulse briefly stuns nearby infected
+    const source = this.vehicle.isOccupied ? this.vehicle.mesh.position : this.player.mesh.position;
+    events.emit('flareTriggered', {
+      position: source.clone(),
+      radius: CONFIG.shift.manualStunRadius,
+      duration: CONFIG.shift.manualStunDuration
+    });
+  }
+
+  updateManualShiftHUD(dt) {
+    this.manualShiftCooldown = Math.max(0, (this.manualShiftCooldown || 0) - dt);
+    const el = document.getElementById('manual-shift-status');
+    if (!el) return;
+    const text = this.manualShiftCooldown > 0
+      ? `[V] SUN SHIFT: ${Math.ceil(this.manualShiftCooldown)}s`
+      : '[V] SUN SHIFT: READY';
+    if (el.textContent !== text) el.textContent = text;
+  }
+
+  updateScoreHUD(dt) {
+    this.score.update(dt);
+    const total = document.getElementById('score-counter');
+    if (total) total.textContent = this.score.score;
+    const popup = document.getElementById('combo-popup');
+    if (!popup) return;
+    const active = this.score.combo > 1 || (this.score.combo === 1 && this.shift.isNight);
+    popup.style.display = active ? 'block' : 'none';
+    if (active) {
+      popup.textContent = `COMBO ${this.score.combo}  x${this.score.multiplier}  +${this.score.lastPoints}`;
+      popup.style.opacity = String(Math.max(0.3, this.score.comboTimer / CONFIG.score.comboWindow));
+    }
+  }
+
+  showFinalScore() {
+    const { isNewBest, best } = this.score.saveBest();
+    const el = document.getElementById('gameover-score');
+    if (!el) return;
+    el.textContent = `SCORE ${this.score.score}  |  RANK ${this.score.rank}  |  BEST COMBO ${this.score.maxCombo}  |  `
+      + (isNewBest ? 'NEW BEST!' : `BEST ${best}`);
+  }
+
+  resetWorld() {
+    this.score.reset();
+    this.manualShiftCooldown = 0;
     this.clearExtraNightZombies();
+    this.spawnQueue = [];
     if (this.dialogue) this.dialogue.clear();
     this.noise = 0;
     this.player.reset();
@@ -913,6 +983,12 @@ export class Game {
     this.relays.reset();
     this.shift.reset();
     this.spawnZombies();
+    if (this.sound) this.sound.setLowHealthHeartbeat(false);
+    if (this.effects) this.effects.setLowHealthEffect(false);
+  }
+
+  restart() {
+    this.resetWorld();
 
     this.stats.startTime = performance.now();
     this.stats.survivalTime = 0;
@@ -949,6 +1025,9 @@ export class Game {
   }
 
   win(endingData = null) {
+    this.score.addWinBonus((performance.now() - this.stats.startTime) / 1000);
+    this.showFinalScore();
+    if (this.dialogue) this.dialogue.clear();
     this.state = GAME_STATES.WIN;
     this.stats.survivalTime = ((performance.now() - this.stats.startTime) / 1000).toFixed(1);
     this.updateRecords(this.stats);
@@ -990,6 +1069,8 @@ export class Game {
   }
 
   lose() {
+    this.showFinalScore();
+    if (this.dialogue) this.dialogue.clear();
     this.state = GAME_STATES.LOSE;
     this.stats.survivalTime = ((performance.now() - this.stats.startTime) / 1000).toFixed(1);
     this.updateRecords(this.stats);
@@ -1152,6 +1233,16 @@ export class Game {
         }
       }
 
+      // Core world updates: day/night cycle, car physics, pickups
+      this.shift.update(dt);
+      this.updateManualShiftHUD(dt);
+      this.updateScoreHUD(dt);
+      if (this.skyLighting) this.skyLighting.update(dt);
+      this.vehicle.update(dt, this.input, this.city.colliders, this.zombies, this.shift.isNight);
+      // While driving, the player travels with the car
+      if (this.vehicle.isOccupied) this.player.mesh.position.copy(this.vehicle.mesh.position);
+      this.pickups.update(dt, this.player);
+
       const activeEntityPos = this.vehicle.isOccupied ? this.vehicle.mesh.position : this.player.mesh.position;
       this.effects.update(dt, activeEntityPos);
       if (this.atmosphere) this.atmosphere.update(dt, activeEntityPos);
@@ -1175,7 +1266,7 @@ export class Game {
       );
       this.dirLight.target.position.copy(activeEntityPos);
 
-      this.relays.update(dt, this.vehicle.isOccupied ? { mesh: { position: this.vehicle.mesh.position } } : this.player);
+      this.relays.update(dt, this.vehicle.isOccupied ? { mesh: { position: this.vehicle.mesh.position } } : this.player, this.shift.isNight, this.effects);
 
       const qPreset = CONFIG.quality[this.settings.quality] || CONFIG.quality.MEDIUM;
       this.city.updateStreetlights(activeEntityPos, qPreset.pointLights);

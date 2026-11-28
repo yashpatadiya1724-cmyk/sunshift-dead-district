@@ -142,6 +142,7 @@
         <div id="shift-timer-bar"><div id="shift-progress"></div></div>
       </div>
       <div id="mission-text">MISSION: FIRST LIGHT — REACH THE MUSCLE CAR</div>
+      <div id="manual-shift-status">[V] SUN SHIFT: READY</div>
     </div>
 
     <!-- Tower Uplink Charge Bar (Mission 6) -->
@@ -153,8 +154,14 @@
       <div class="bar-container"><div id="tower-charge-bar"></div></div>
     </div>
 
+    <div id="combo-popup" style="display: none;"></div>
+
     <!-- Top Right Stats -->
     <div id="top-right-stats">
+      <div class="stat-pill">
+        <span class="pill-lbl">SCORE:</span>
+        <b id="score-counter" class="pill-val">0</b>
+      </div>
       <div class="stat-pill">
         <span class="pill-lbl">SURVIVAL:</span>
         <b id="survival-timer" class="pill-val">00:00</b>
@@ -218,7 +225,7 @@
     </div>
 
     <div id="controls-hint">
-      [W,A,S,D] Move | [1,2,3] Weapons | [R] Reload | [Q] Flare | [F] Car | [Shift] Sprint | [Space] Jump | [Esc] Pause
+      [W,A,S,D] Move | [1,2,3] Weapons | [R] Reload | [Q] Flare | [V] Sun Shift | [F] Car | [Shift] Sprint | [Space] Jump | [Esc] Pause
     </div>
   </div>
 
@@ -273,7 +280,7 @@
     <div id="pause-menu" class="menu-card" style="display: none;">
       <h2 class="panel-title">GAME PAUSED</h2>
       <div class="menu-btn-stack">
-        <button id="btn-resume" class="cyber-btn primary">RESUME GAME [ESC]</button>
+        <button id="btn-resume" class="cyber-btn primary">RESUME GAME</button>
         <button id="btn-pause-settings" class="cyber-btn">SETTINGS</button>
         <button id="btn-restart" class="cyber-btn">RESTART RUN</button>
         <button id="btn-pause-menu" class="cyber-btn danger">MAIN MENU</button>
@@ -289,6 +296,7 @@
         <div class="ctrl-row"><span>Reload Weapon:</span> <b>R Key</b></div>
         <div class="ctrl-row"><span>Enter / Exit Car:</span> <b>F Key</b></div>
         <div class="ctrl-row"><span>UV Flare Shockwave:</span> <b>Q Key</b></div>
+        <div class="ctrl-row"><span>Force Sun Shift (Day/Night):</span> <b>V Key</b></div>
         <div class="ctrl-row"><span>Handbrake / Jump:</span> <b>Spacebar</b></div>
         <div class="ctrl-row"><span>Aim & Look:</span> <b>Mouse Movement</b></div>
         <div class="ctrl-row"><span>Shoot:</span> <b>Left Mouse Click</b></div>
@@ -358,6 +366,7 @@
       <h1 id="gameover-title" class="title-win">YOU SURVIVED</h1>
       <p id="gameover-subtitle">District evacuated successfully.</p>
       <p id="gameover-mission" class="gameover-mission-txt"></p>
+      <p id="gameover-score"></p>
       <div class="stats-grid">
         <div class="stat-box">
           <div class="stat-num" id="stat-missions">0 / 6</div>

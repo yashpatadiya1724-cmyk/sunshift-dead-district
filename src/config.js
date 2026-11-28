@@ -196,8 +196,20 @@ export const CONFIG = {
   },
 
   // Shift Day/Night Cycle
+  score: {
+    points: { NORMAL: 100, RUNNER: 150, BRUTE: 300 },
+    comboWindow: 4.0,        // seconds to chain the next kill
+    maxMultiplier: 5,
+    nightMultiplier: 2,
+    retryKeep: 0.8,          // score kept after a checkpoint retry
+    ranks: [['S', 25000], ['A', 15000], ['B', 8000], ['C', 0]]
+  },
+
   shift: {
     cycleDuration: 30.0,
+    manualCooldown: 20.0,     // [V] player-triggered Sun Shift
+    manualStunRadius: 12.0,
+    manualStunDuration: 2.0,
     warningSeconds: 5.0,
     nightExtraSpawns: 6,
     dayFog: 0x87ceeb,
@@ -219,8 +231,8 @@ export const CONFIG = {
     nightHemiSky: 0x200505,
     nightHemiGround: 0x050000,
     nightHemiIntensity: 0.2,
-    nightBloom: 1.05,
-    nightWindowGlow: 1.6
+    nightBloom: 0.45,
+    nightWindowGlow: 0.45
   },
 
   // Relays and Evacuation Tower

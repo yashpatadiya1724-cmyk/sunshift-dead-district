@@ -161,6 +161,7 @@ export class Vehicle {
 
   enter(player) {
     this.isOccupied = true;
+    player.isInVehicle = true;
     player.mesh.visible = false;
     if (this.sound) this.sound.startEngine();
     events.emit('vehicleState', { inVehicle: true, speed: this.speed, health: this.health });
@@ -168,12 +169,19 @@ export class Vehicle {
 
   exit(player) {
     this.isOccupied = false;
+    player.isInVehicle = false;
     player.mesh.visible = true;
 
     // Eject player slightly to the left of the car without runtime allocation
-    _sideOffset.set(-2.2, 0, 0).applyAxisAngle(_upAxis, this.yaw);
-    player.mesh.position.copy(this.mesh.position).add(_sideOffset);
-    player.mesh.position.y = 0;
+    // Try left, right, back, front and use the first spot that is not inside an obstacle
+    const colliders = window.__SUNSHIFT_GAME__?.city?.colliders || [];
+    for (const [x, z] of [[-2.2, 0], [2.2, 0], [0, -3.2], [0, 3.2]]) {
+      _sideOffset.set(x, 0, z).applyAxisAngle(_upAxis, this.yaw);
+      player.mesh.position.copy(this.mesh.position).add(_sideOffset);
+      player.mesh.position.y = 0;
+      if (!player.checkCollisions(player.mesh.position, colliders)) break;
+      player.mesh.position.copy(this.mesh.position);
+    }
 
     if (this.sound) this.sound.stopEngine();
     events.emit('vehicleState', { inVehicle: false, speed: 0, health: this.health });

@@ -416,6 +416,7 @@ export class MissionManager {
     this.game.player.mesh.position.copy(this.checkpoint.playerPos);
     this.game.player.yaw = this.checkpoint.playerYaw;
     this.game.player.isDead = false;
+    events.emit('playerHealed', { health: 100, maxHealth: this.game.player.maxHealth });
 
     // Clear nearby aggro zombies to give player safe restart
     this.game.zombies.forEach(z => {
