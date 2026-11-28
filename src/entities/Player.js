@@ -24,6 +24,9 @@ const _crosshairTargetPoint = new THREE.Vector3();
 const _muzzlePos = new THREE.Vector3();
 const _bulletDir = new THREE.Vector3();
 const _targetVel = new THREE.Vector3();
+const _groundRaycaster = new THREE.Raycaster();
+const _groundRayOrigin = new THREE.Vector3();
+const _downDir = new THREE.Vector3(0, -1, 0);
 
 // Helper to move 2D vector towards target without allocation
 function moveTowards2D(current, targetX, targetZ, maxDelta) {
@@ -38,6 +41,20 @@ function moveTowards2D(current, targetX, targetZ, maxDelta) {
   const dist = Math.sqrt(distSq);
   current.x += (dx / dist) * maxDelta;
   current.z += (dz / dist) * maxDelta;
+}
+
+export function fitWeapon(obj, targetLength, parentWorldScale = 1.8) {
+  obj.scale.set(1, 1, 1);
+  obj.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const rawLength = Math.max(size.x, size.y, size.z);
+  if (rawLength <= 0.0001) return 1.0;
+  // S_local * rawLength * parentWorldScale = targetLength
+  const localScale = targetLength / (rawLength * parentWorldScale);
+  obj.scale.set(localScale, localScale, localScale);
+  return localScale;
 }
 
 export class Player {
@@ -70,6 +87,7 @@ export class Player {
     // Coyote Time & Jump Buffer
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
+    this.prevSpaceKey = false;
 
     // Stamina & Sprint
     this.stamina = CONFIG.movement?.staminaMax || 5.0;
@@ -151,12 +169,17 @@ export class Player {
         if (runClip) this.actions.run = this.mixer.clipAction(runClip);
         if (idleClip) this.actions.idle = this.mixer.clipAction(idleClip);
 
-        // Requirement 5: survivor idle = walk clip ka pehla frame (paused)
-        if (this.actions.walk) {
+        // Requirement 2(f): survivor real idle clip if present; otherwise walk frame where feet are close (0.59s, not frame 0)
+        if (this.actions.idle) {
+          this.actions.idle.play();
+          this.currentAction = this.actions.idle;
+          this.currentAnimState = 'idle';
+        } else if (this.actions.walk) {
           this.actions.walk.play();
+          this.actions.walk.time = 0.59;
           this.actions.walk.paused = true;
-          this.actions.walk.time = 0;
           this.currentAction = this.actions.walk;
+          this.currentAnimState = 'idle';
         }
       }
     } else {
@@ -297,14 +320,18 @@ export class Player {
                   : w.name.toLowerCase().includes('shotgun') ? 'weapon_shotgun'
                   : 'weapon_rifle';
 
+    const targetLength = w.targetLength || (assetId.includes('pistol') ? 0.22 : assetId.includes('shotgun') ? 0.95 : 0.85);
+    const parentWorldScale = this.mesh ? this.mesh.scale.y : 1.8;
+
     const modelInstance = assets ? assets.getInstance(assetId) : null;
     if (modelInstance) {
       this.weaponMesh = modelInstance;
+      fitWeapon(this.weaponMesh, targetLength, parentWorldScale);
       if (rHand) {
-        // Requirement 6: Weapon R_Hand bone se attach karo aur haath me sahi dikhe
-        this.weaponMesh.scale.set(0.65, 0.65, 0.65);
-        this.weaponMesh.position.set(0.02, 0.06, 0.08);
-        this.weaponMesh.rotation.set(-Math.PI * 0.45, Math.PI, 0);
+        const gripPos = w.grip?.position || [0.02, 0.08, 0.04];
+        const gripRot = w.grip?.rotation || [0, 0, Math.PI * 0.5];
+        this.weaponMesh.position.set(gripPos[0], gripPos[1], gripPos[2]);
+        this.weaponMesh.rotation.set(gripRot[0], gripRot[1], gripRot[2]);
         rHand.add(this.weaponMesh);
       } else if (this.rightArm) {
         this.weaponMesh.position.set(0, -0.38, 0.22);
@@ -393,6 +420,7 @@ export class Player {
 
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
+    this.prevSpaceKey = false;
     this.stamina = CONFIG.movement?.staminaMax || 5.0;
     this.staminaRegenCooldown = 0;
     this.isSprinting = false;
@@ -597,12 +625,13 @@ export class Player {
     }
 
     // 6. Smooth Model Turning vs Aim Facing
+    const modelYawOffset = this.rHandBone ? -Math.PI * 0.5 : 0;
     if (this.isAiming) {
       // Aim mode: face camera direction immediately to strafe
-      this.mesh.rotation.y = this.yaw + Math.PI;
+      this.mesh.rotation.y = this.yaw + Math.PI + modelYawOffset;
     } else if (horizontalSpeed > 0.15) {
       // Movement mode: smoothly turn body towards velocity direction over turnSmoothTime
-      const targetYaw = Math.atan2(this.velocity.x, this.velocity.z);
+      const targetYaw = Math.atan2(this.velocity.x, this.velocity.z) + modelYawOffset;
       let diff = targetYaw - this.mesh.rotation.y;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
@@ -627,19 +656,25 @@ export class Player {
       this.velocity.z = 0;
     }
 
-    // 8. Coyote Time & Jump Buffer
+    // 8. Coyote Time & Jump Buffer (Key-press edge, strictly zero timers on jump, never re-jump in mid-air)
     if (this.isGrounded) {
       this.coyoteTimer = moveCfg.coyoteTime || 0.1;
     } else {
       this.coyoteTimer = Math.max(0, this.coyoteTimer - dt);
     }
 
-    if (this.input.isKey('Space')) {
+    const spaceDown = this.input.isKey('Space');
+    const spacePressedEdge = spaceDown && !this.prevSpaceKey;
+    this.prevSpaceKey = spaceDown;
+
+    if (spacePressedEdge) {
       if (this.isGrounded || this.coyoteTimer > 0) {
         this.velocityY = this.jumpStrength;
         this.isGrounded = false;
         this.coyoteTimer = 0;
+        this.jumpBufferTimer = 0;
       } else {
+        // Buffer queued only on the exact press edge while falling/in-air
         this.jumpBufferTimer = moveCfg.jumpBufferTime || 0.1;
       }
     }
@@ -647,23 +682,45 @@ export class Player {
       this.jumpBufferTimer = Math.max(0, this.jumpBufferTimer - dt);
     }
 
+    // Downward gravity acceleration (gravity magnitude strictly positive)
+    const gravityMagnitude = Math.abs(this.gravity || 22.0);
     if (!this.isGrounded) {
-      this.velocityY -= this.gravity * dt;
+      this.velocityY -= gravityMagnitude * dt;
       this.mesh.position.y += this.velocityY * dt;
     }
 
-    if (this.mesh.position.y <= 0) {
-      this.mesh.position.y = 0;
-      if (!this.isGrounded) {
-        this.isGrounded = true;
+    // Ground raycast check (ignores player's own mesh and children)
+    let groundHeight = 0;
+    if (cityRayTargets && cityRayTargets.length > 0) {
+      _groundRayOrigin.set(this.mesh.position.x, this.mesh.position.y + 0.5, this.mesh.position.z);
+      _groundRaycaster.set(_groundRayOrigin, _downDir);
+      _groundRaycaster.far = Math.max(1.5, this.mesh.position.y + 1.0);
+      const groundHits = _groundRaycaster.intersectObjects(cityRayTargets, false);
+      for (let i = 0; i < groundHits.length; i++) {
+        const hit = groundHits[i];
+        if (!hit || hit.object === this.mesh || (this.mesh && this.mesh.getObjectById(hit.object.id))) continue;
+        if (hit.point && hit.point.y > groundHeight && hit.point.y <= this.mesh.position.y + 0.2) {
+          groundHeight = hit.point.y;
+        }
+      }
+    }
+
+    if (this.mesh.position.y <= groundHeight) {
+      this.mesh.position.y = groundHeight;
+      const justLanded = !this.isGrounded;
+      this.isGrounded = true;
+      this.velocityY = 0;
+
+      if (justLanded) {
         this.squashTimer = 0.16; // Landing impact squash
+        // Consume jump buffer ONLY if an edge-triggered buffer was queued
         if (this.jumpBufferTimer > 0) {
           this.velocityY = this.jumpStrength;
           this.isGrounded = false;
+          this.coyoteTimer = 0;
           this.jumpBufferTimer = 0;
         }
       }
-      this.velocityY = 0;
     }
 
     // Landing Squash
@@ -687,7 +744,7 @@ export class Player {
     this.mesh.rotation.x = this.bodyLeanPitch;
     this.mesh.rotation.z = this.bodyLeanRoll;
 
-    // Requirement 5: survivor idle = walk clip ka pehla frame (paused), chalte waqt walk, sprint par run. Crossfade 0.2 second. timeScale = asli speed / clip ki speed.
+    // Requirement 2(e, f): survivor idle = real idle clip (or walk 0.59s), directional walk/run with clamped timeScale
     if (this.mixer) {
       let targetState = 'idle';
       if (horizontalSpeed > 0.2) {
@@ -697,16 +754,20 @@ export class Player {
       if (this.currentAnimState !== targetState) {
         const prevAction = this.currentAction;
         if (targetState === 'idle') {
-          const targetAction = this.actions.walk;
+          const targetAction = this.actions.idle || this.actions.walk;
           if (targetAction) {
             targetAction.paused = false;
             if (prevAction && prevAction !== targetAction) {
               prevAction.crossFadeTo(targetAction, 0.2, true);
             }
             targetAction.play();
-            targetAction.time = 0;
-            targetAction.timeScale = 0;
-            targetAction.paused = true;
+            if (!this.actions.idle && this.actions.walk) {
+              targetAction.time = 0.59;
+              targetAction.timeScale = 0;
+              targetAction.paused = true;
+            } else {
+              targetAction.timeScale = 1.0;
+            }
             this.currentAction = targetAction;
           }
         } else if (targetState === 'walk') {
@@ -733,12 +794,42 @@ export class Player {
         this.currentAnimState = targetState;
       }
 
-      // timeScale = asli speed / clip ki speed
+      // Directional motion in Aim mode:
+      // Local forward = +1, backward = -1 (reverse timeScale), strafe side = 0.8
+      let directionalMultiplier = 1.0;
+      if (this.isAiming && horizontalSpeed > 0.15) {
+        const fX = -Math.sin(this.yaw);
+        const fZ = -Math.cos(this.yaw);
+        const rX = Math.cos(this.yaw);
+        const rZ = -Math.sin(this.yaw);
+
+        const forwardDot = (this.velocity.x * fX + this.velocity.z * fZ) / horizontalSpeed;
+        const strafeDot = Math.abs((this.velocity.x * rX + this.velocity.z * rZ) / horizontalSpeed);
+
+        if (forwardDot < -0.5) {
+          directionalMultiplier = -1.0;
+        } else if (strafeDot > 0.5 && Math.abs(forwardDot) <= 0.5) {
+          directionalMultiplier = 0.8;
+        } else {
+          directionalMultiplier = 1.0;
+        }
+      }
+
+      // timeScale = actual speed / clip stride speed (clamped to [0.6, 1.6])
       if (this.currentAction && !this.currentAction.paused) {
+        const measuredWalkStrideSpeed = 0.66; // measured world stride speed at 1.8 scale
+        const measuredRunStrideSpeed = 1.35;
+
         if (this.currentAnimState === 'walk') {
-          this.currentAction.timeScale = Math.max(0.3, horizontalSpeed / (this.speed * 0.5));
+          const rawScale = horizontalSpeed / measuredWalkStrideSpeed;
+          const clampedScale = THREE.MathUtils.clamp(rawScale, 0.6, 1.6);
+          this.currentAction.timeScale = clampedScale * directionalMultiplier;
         } else if (this.currentAnimState === 'run') {
-          this.currentAction.timeScale = Math.max(0.3, horizontalSpeed / (this.speed * this.sprintMultiplier * 0.7));
+          const rawScale = horizontalSpeed / measuredRunStrideSpeed;
+          const clampedScale = THREE.MathUtils.clamp(rawScale, 0.6, 1.6);
+          this.currentAction.timeScale = clampedScale;
+        } else if (this.currentAnimState === 'idle') {
+          this.currentAction.timeScale = 1.0;
         }
       }
 

@@ -573,6 +573,14 @@ export class AssetManager {
     return this.models.get(id) || this.textures.get(id) || null;
   }
 
+  getModel(id) {
+    return this.models.get(id) || null;
+  }
+
+  getAnimations(id) {
+    return this.animations.get(id) || [];
+  }
+
   getClipMap(id) {
     return this.clipMaps.get(id) || {};
   }

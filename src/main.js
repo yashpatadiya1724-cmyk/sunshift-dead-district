@@ -25,6 +25,14 @@ async function init() {
       if (loadingText) loadingText.textContent = `LOADING ASSETS (${pct}%) — ${itemId.toUpperCase()}`;
     });
 
+    // Dev-only Animation Viewer (?anim=1)
+    if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('anim') === '1') {
+      if (loadingScreen) loadingScreen.style.display = 'none';
+      const { AnimViewer } = await import('./ui/AnimViewer.js');
+      new AnimViewer();
+      return;
+    }
+
     // 2. Initialize Game engine
     const game = new Game();
     window.__SUNSHIFT_GAME__ = game;

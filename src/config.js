@@ -116,7 +116,12 @@ export const CONFIG = {
       reserveAmmo: Infinity,
       maxReserve: Infinity,
       color: 0x444444,
-      size: [0.12, 0.22, 0.4]
+      size: [0.12, 0.22, 0.4],
+      targetLength: 0.22,
+      grip: {
+        position: [0.02, 0.08, 0.04],
+        rotation: [0, 0, Math.PI * 0.5]
+      }
     },
     shotgun: {
       id: 1,
@@ -131,7 +136,12 @@ export const CONFIG = {
       reserveAmmo: 24,
       maxReserve: 36,
       color: 0x5a3d28,
-      size: [0.14, 0.2, 0.85]
+      size: [0.14, 0.2, 0.85],
+      targetLength: 0.95,
+      grip: {
+        position: [0.02, 0.12, 0.04],
+        rotation: [0, 0, Math.PI * 0.5]
+      }
     },
     rifle: {
       id: 2,
@@ -146,7 +156,12 @@ export const CONFIG = {
       reserveAmmo: 90,
       maxReserve: 150,
       color: 0x2e353b,
-      size: [0.12, 0.24, 0.75]
+      size: [0.12, 0.24, 0.75],
+      targetLength: 0.85,
+      grip: {
+        position: [0.02, 0.12, 0.04],
+        rotation: [0, 0, Math.PI * 0.5]
+      }
     }
   },
 

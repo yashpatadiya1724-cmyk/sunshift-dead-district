@@ -288,7 +288,7 @@ export class Zombie {
       // timeScale = actual speed / clip speed
       if (this.currentAction) {
         const nominalSpeed = isNight ? (this.archetype.nightSpeed || 5.2) : (this.archetype.daySpeed || 1.8);
-        this.currentAction.timeScale = isMoving ? Math.max(0.2, currentSpeed / nominalSpeed) : 1.0;
+        this.currentAction.timeScale = isMoving ? THREE.MathUtils.clamp(currentSpeed / nominalSpeed, 0.6, 1.6) : 1.0;
       }
     }
 
