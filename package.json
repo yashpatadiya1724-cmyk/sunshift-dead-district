@@ -8,7 +8,7 @@
     "build": "vite build",
     "build:itch": "vite build --base=./ && node scripts/zip_dist.js",
     "preview": "vite preview",
-    "test": "node test/game_engine_test.js && node test/movement_test.js && node test/jump_integration_test.js"
+    "test": "node test/game_engine_test.js && node test/movement_test.js && node test/jump_integration_test.js && node test/relay_shift_test.js"
   },
   "dependencies": {
     "three": "^0.160.0"

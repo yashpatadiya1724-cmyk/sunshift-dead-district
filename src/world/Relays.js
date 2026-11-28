@@ -91,18 +91,29 @@ export class RelayManager {
     this.updateMissionUI();
   }
 
-  update(dt, player) {
+  update(dt, player, isNight = true, effects = null) {
     this.bobTimer += dt * 3.0;
+
+    this.dormantHintTimer = Math.max(0, (this.dormantHintTimer || 0) - dt);
 
     for (const relay of this.relays) {
       // Only the visible (current mission) relay can be collected
       if (relay.collected || !relay.group.visible) continue;
 
-      relay.octMesh.rotation.y += dt * 2.0;
+      // Dim blue-grey while dormant (day), bright yellow when awake (night)
+      const tint = isNight ? 0xffe600 : 0x667788;
+      relay.group.children.forEach(child => child.material?.color?.setHex(tint));
+
+      relay.octMesh.rotation.y += dt * (isNight ? 2.0 : 0.4);
       relay.octMesh.position.y = 1.5 + Math.sin(this.bobTimer) * 0.25;
 
       const dist = player.mesh.position.distanceTo(relay.group.position);
-      if (dist < CONFIG.relays.pickupRadius) {
+      if (dist < CONFIG.relays.pickupRadius && !isNight) {
+        if (this.dormantHintTimer <= 0) {
+          this.dormantHintTimer = 4.0;
+          effects?.showBanner('RELAY DORMANT: PRESS [V]', '#6ec6ff');
+        }
+      } else if (dist < CONFIG.relays.pickupRadius) {
         relay.collected = true;
         this.scene.remove(relay.group);
         this.collectedCount++;

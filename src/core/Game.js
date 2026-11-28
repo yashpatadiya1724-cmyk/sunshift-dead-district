@@ -91,8 +91,8 @@ export class Game {
     this.tutorialSteps = [
       { tag: 'TUTORIAL (1/5)', msg: 'Use [W, A, S, D] to move and hold [SHIFT] to sprint.' },
       { tag: 'TUTORIAL (2/5)', msg: 'Keys [1, 2, 3] switch weapons (Pistol, Shotgun, Rifle). Press [R] to reload.' },
-      { tag: 'TUTORIAL (3/5)', msg: 'Collect all 4 yellow street Relays to power the central Evac Tower.' },
-      { tag: 'TUTORIAL (4/5)', msg: 'Beware the SHIFT! In Night Shift, infected sprint and extra zombies spawn.' },
+      { tag: 'TUTORIAL (3/5)', msg: 'Relays wake only at NIGHT. Collect all 4 to power the central Evac Tower.' },
+      { tag: 'TUTORIAL (4/5)', msg: 'Press [V] to force a SUN SHIFT. At night relays wake, but infected sprint.' },
       { tag: 'TUTORIAL (5/5)', msg: 'Press [Q] for UV Flare to freeze enemies. Walk up to the muscle car and press [F] to drive!' }
     ];
 
@@ -272,6 +272,9 @@ export class Game {
         if (this.shift && this.state === GAME_STATES.PLAYING) {
           this.shift.triggerShift();
         }
+      }
+      if (e.code === 'KeyV' && !e.repeat) {
+        this.tryManualShift();
       }
       if (e.code === 'F3') {
         this.showFps = !this.showFps;
@@ -914,7 +917,31 @@ export class Game {
     events.emit('stateChange', this.state);
   }
 
+  tryManualShift() {
+    if (this.state !== GAME_STATES.PLAYING || this.manualShiftCooldown > 0) return;
+    this.manualShiftCooldown = CONFIG.shift.manualCooldown;
+    this.shift.triggerShift();
+    // The shift pulse briefly stuns nearby infected
+    const source = this.vehicle.isOccupied ? this.vehicle.mesh.position : this.player.mesh.position;
+    events.emit('flareTriggered', {
+      position: source.clone(),
+      radius: CONFIG.shift.manualStunRadius,
+      duration: CONFIG.shift.manualStunDuration
+    });
+  }
+
+  updateManualShiftHUD(dt) {
+    this.manualShiftCooldown = Math.max(0, (this.manualShiftCooldown || 0) - dt);
+    const el = document.getElementById('manual-shift-status');
+    if (!el) return;
+    const text = this.manualShiftCooldown > 0
+      ? `[V] SUN SHIFT: ${Math.ceil(this.manualShiftCooldown)}s`
+      : '[V] SUN SHIFT: READY';
+    if (el.textContent !== text) el.textContent = text;
+  }
+
   resetWorld() {
+    this.manualShiftCooldown = 0;
     this.clearExtraNightZombies();
     this.spawnQueue = [];
     if (this.dialogue) this.dialogue.clear();
@@ -1175,6 +1202,7 @@ export class Game {
 
       // Core world updates: day/night cycle, car physics, pickups
       this.shift.update(dt);
+      this.updateManualShiftHUD(dt);
       if (this.skyLighting) this.skyLighting.update(dt);
       this.vehicle.update(dt, this.input, this.city.colliders, this.zombies, this.shift.isNight);
       // While driving, the player travels with the car
@@ -1204,7 +1232,7 @@ export class Game {
       );
       this.dirLight.target.position.copy(activeEntityPos);
 
-      this.relays.update(dt, this.vehicle.isOccupied ? { mesh: { position: this.vehicle.mesh.position } } : this.player);
+      this.relays.update(dt, this.vehicle.isOccupied ? { mesh: { position: this.vehicle.mesh.position } } : this.player, this.shift.isNight, this.effects);
 
       const qPreset = CONFIG.quality[this.settings.quality] || CONFIG.quality.MEDIUM;
       this.city.updateStreetlights(activeEntityPos, qPreset.pointLights);
