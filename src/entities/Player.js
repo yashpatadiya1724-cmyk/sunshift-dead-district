@@ -448,6 +448,7 @@ export class Player {
     if (this.effects) this.effects.setLowHealthEffect(false);
     if (this.sound) this.sound.setLowHealthHeartbeat(false);
 
+    events.emit('playerHealed', { health: this.health, maxHealth: this.maxHealth });
     this.emitWeaponState();
   }
 
