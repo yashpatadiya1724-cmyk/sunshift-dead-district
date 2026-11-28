@@ -95,7 +95,8 @@ export class RelayManager {
     this.bobTimer += dt * 3.0;
 
     for (const relay of this.relays) {
-      if (relay.collected) continue;
+      // Only the visible (current mission) relay can be collected
+      if (relay.collected || !relay.group.visible) continue;
 
       relay.octMesh.rotation.y += dt * 2.0;
       relay.octMesh.position.y = 1.5 + Math.sin(this.bobTimer) * 0.25;
@@ -112,7 +113,7 @@ export class RelayManager {
       }
     }
 
-    const distToTower = player.mesh.position.distanceTo(this.towerGroup.position);
+    // The ending is decided by MissionManager (tower defence, then final choice)
     if (this.collectedCount >= this.totalRelays) {
       if (!this.isTowerActive) {
         this.isTowerActive = true;
@@ -120,10 +121,6 @@ export class RelayManager {
         this.towerBeamMat.color.setHex(0x00ff66);
         this.towerBeamMat.opacity = 0.55;
         if (this.sound) this.sound.relayPickup();
-      }
-
-      if (distToTower < CONFIG.relays.towerEvacRadius) {
-        events.emit('gameWon');
       }
     }
   }

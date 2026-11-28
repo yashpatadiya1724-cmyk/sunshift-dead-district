@@ -43,8 +43,8 @@ export class Input {
 
       window.addEventListener('mousemove', (e) => {
         if (this.isLocked) {
-          this.mouse.deltaX = e.movementX || 0;
-          this.mouse.deltaY = e.movementY || 0;
+          this.mouse.deltaX += e.movementX || 0;
+          this.mouse.deltaY += e.movementY || 0;
         }
       });
     }

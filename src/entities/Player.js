@@ -389,7 +389,6 @@ export class Player {
     if (w && w.reserveAmmo !== Infinity) {
       w.reserveAmmo = Math.min(w.maxReserve, w.reserveAmmo + count);
       this.emitWeaponState();
-      if (this.sound) this.sound.ammoPickup();
     }
   }
 
@@ -399,6 +398,9 @@ export class Player {
 
   reset() {
     this.health = this.maxHealth;
+    this.isDead = false;
+    this.isInVehicle = false;
+    this.mesh.visible = true;
     this.mesh.position.set(0, 0, 0);
     this.mesh.rotation.set(0, 0, 0);
     this.velocity.set(0, 0, 0);
@@ -1206,6 +1208,7 @@ export class Player {
   }
 
   takeDamage(amount, sourcePos = null) {
+    if (this.isInVehicle) return; // the car shields the driver
     if (this.health <= 0) return;
     if (this.invulnerableTimer > 0) return; // 0.2s dash invulnerability window
     this.health = Math.max(0, this.health - amount);
@@ -1247,7 +1250,6 @@ export class Player {
       if (this.effects) this.effects.setLowHealthEffect(false);
     }
 
-    if (this.sound) this.sound.healthPickup();
     events.emit('playerHealed', { health: this.health, maxHealth: this.maxHealth });
   }
 

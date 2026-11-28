@@ -286,9 +286,12 @@ export class Game {
 
     document.addEventListener('pointerlockchange', () => {
       if (!document.pointerLockElement && this.state === GAME_STATES.PLAYING) {
-        if (this.input && this.input.isLocked) {
-          this.pause();
-        }
+        this.pause();
+      }
+    });
+    this.renderer.domElement.addEventListener('click', () => {
+      if (this.state === GAME_STATES.PLAYING && !document.pointerLockElement) {
+        this.requestPointerLockSafe();
       }
     });
 
@@ -709,12 +712,21 @@ export class Game {
   }
 
   spawnCustomZombie(pos, type = 'NORMAL') {
+    // Mission zombies must always appear: at the cap, remove the farthest ambient zombie
     if (this.getActiveAliveCount() >= this.getMaxAlive()) {
-      this.spawnQueue.push({ type: 'CUSTOM', pos, typeName: type });
-      return null;
+      const p = this.player.mesh.position;
+      let farthest = null;
+      for (const other of this.zombies) {
+        if (other.isDead || other.isRemoved || other.isMission) continue;
+        if (!farthest || other.mesh.position.distanceToSquared(p) > farthest.mesh.position.distanceToSquared(p)) {
+          farthest = other;
+        }
+      }
+      if (farthest) farthest.destroy();
     }
     const archetype = CONFIG.enemies[type.toLowerCase()] || CONFIG.enemies.normal;
     const z = new Zombie(this.scene, pos, this.sound, archetype, false);
+    z.isMission = true;
     this.zombies.push(z);
     return z;
   }
@@ -829,7 +841,7 @@ export class Game {
     this.autoDetectChecked = false;
     this.autoDetectFrames = 0;
     this.autoDetectTotalTime = 0;
-    this.noise = 0;
+    this.resetWorld();
     this.input.reset();
 
     this.playIntro(() => {
@@ -902,8 +914,9 @@ export class Game {
     events.emit('stateChange', this.state);
   }
 
-  restart() {
+  resetWorld() {
     this.clearExtraNightZombies();
+    this.spawnQueue = [];
     if (this.dialogue) this.dialogue.clear();
     this.noise = 0;
     this.player.reset();
@@ -913,6 +926,12 @@ export class Game {
     this.relays.reset();
     this.shift.reset();
     this.spawnZombies();
+    if (this.sound) this.sound.setLowHealthHeartbeat(false);
+    if (this.effects) this.effects.setLowHealthEffect(false);
+  }
+
+  restart() {
+    this.resetWorld();
 
     this.stats.startTime = performance.now();
     this.stats.survivalTime = 0;
@@ -949,6 +968,7 @@ export class Game {
   }
 
   win(endingData = null) {
+    if (this.dialogue) this.dialogue.clear();
     this.state = GAME_STATES.WIN;
     this.stats.survivalTime = ((performance.now() - this.stats.startTime) / 1000).toFixed(1);
     this.updateRecords(this.stats);
@@ -990,6 +1010,7 @@ export class Game {
   }
 
   lose() {
+    if (this.dialogue) this.dialogue.clear();
     this.state = GAME_STATES.LOSE;
     this.stats.survivalTime = ((performance.now() - this.stats.startTime) / 1000).toFixed(1);
     this.updateRecords(this.stats);
@@ -1151,6 +1172,14 @@ export class Game {
           }
         }
       }
+
+      // Core world updates: day/night cycle, car physics, pickups
+      this.shift.update(dt);
+      if (this.skyLighting) this.skyLighting.update(dt);
+      this.vehicle.update(dt, this.input, this.city.colliders, this.zombies, this.shift.isNight);
+      // While driving, the player travels with the car
+      if (this.vehicle.isOccupied) this.player.mesh.position.copy(this.vehicle.mesh.position);
+      this.pickups.update(dt, this.player);
 
       const activeEntityPos = this.vehicle.isOccupied ? this.vehicle.mesh.position : this.player.mesh.position;
       this.effects.update(dt, activeEntityPos);
