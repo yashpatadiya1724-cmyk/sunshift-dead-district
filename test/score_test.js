@@ -1,0 +1,21 @@
+import assert from 'node:assert';
+import { ScoreSystem } from '../src/core/ScoreSystem.js';
+
+const s = new ScoreSystem();
+s.addKill('NORMAL', false);
+assert.strictEqual(s.score, 100);
+s.addKill('NORMAL', false);
+assert.strictEqual(s.score, 300, 'Second chained kill is x2');
+s.update(5);
+assert.strictEqual(s.combo, 0, 'Combo expires');
+s.addKill('BRUTE', true);
+assert.strictEqual(s.score, 900, 'Night doubles points');
+for (let i = 0; i < 10; i++) s.addKill('NORMAL', false);
+assert.strictEqual(s.multiplier, 5, 'Multiplier is capped');
+s.breakCombo();
+assert.strictEqual(s.combo, 0);
+const before = s.score;
+s.applyRetryPenalty();
+assert.strictEqual(s.score, Math.floor(before * 0.8));
+assert.ok(['S', 'A', 'B', 'C'].includes(s.rank));
+console.log('Score system tests passed.');

@@ -154,8 +154,14 @@
       <div class="bar-container"><div id="tower-charge-bar"></div></div>
     </div>
 
+    <div id="combo-popup" style="display: none;"></div>
+
     <!-- Top Right Stats -->
     <div id="top-right-stats">
+      <div class="stat-pill">
+        <span class="pill-lbl">SCORE:</span>
+        <b id="score-counter" class="pill-val">0</b>
+      </div>
       <div class="stat-pill">
         <span class="pill-lbl">SURVIVAL:</span>
         <b id="survival-timer" class="pill-val">00:00</b>
@@ -360,6 +366,7 @@
       <h1 id="gameover-title" class="title-win">YOU SURVIVED</h1>
       <p id="gameover-subtitle">District evacuated successfully.</p>
       <p id="gameover-mission" class="gameover-mission-txt"></p>
+      <p id="gameover-score"></p>
       <div class="stats-grid">
         <div class="stat-box">
           <div class="stat-num" id="stat-missions">0 / 6</div>

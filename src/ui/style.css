@@ -44,6 +44,27 @@ body, html {
   text-shadow: 0 0 6px #000;
 }
 
+#combo-popup {
+  position: absolute;
+  top: 42%;
+  right: 28px;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #ffaa00;
+  text-shadow: 0 0 10px #000, 0 0 18px #ff3300;
+  white-space: pre;
+}
+
+#gameover-score {
+  margin: 8px 0 12px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #ffaa00;
+  text-align: center;
+  white-space: pre-wrap;
+}
+
 /* Fallback WebGL Error Box */
 .webgl-error-box {
   position: fixed;

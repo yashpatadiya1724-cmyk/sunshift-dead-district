@@ -16,6 +16,7 @@ import { CONFIG, applyDifficulty } from '../config.js';
 import { events } from './Events.js';
 import { Input } from './Input.js';
 import { Sound } from './Sound.js';
+import { ScoreSystem } from './ScoreSystem.js';
 import { Effects } from './Effects.js';
 import { Player } from '../entities/Player.js';
 import { Zombie } from '../entities/Zombie.js';
@@ -604,9 +605,14 @@ export class Game {
   }
 
   setupEvents() {
+    this.score = new ScoreSystem();
+    events.on('playerHurt', () => this.score.breakCombo());
     // 1. Zombie Killed -> increment stats & spawn pickup drop
     events.on('zombieKilled', (zombie) => {
       this.stats.zombiesKilled++;
+      if (this.state === GAME_STATES.PLAYING) {
+        this.score.addKill(zombie?.archetype?.type, this.shift.isNight);
+      }
       if (zombie && zombie.mesh && this.pickups) {
         this.pickups.spawnDrop(zombie.mesh.position);
       }
@@ -859,6 +865,7 @@ export class Game {
   }
 
   retryFromCheckpoint() {
+    this.score.applyRetryPenalty();
     this.clearExtraNightZombies();
     this.noise = 0;
 
@@ -940,7 +947,30 @@ export class Game {
     if (el.textContent !== text) el.textContent = text;
   }
 
+  updateScoreHUD(dt) {
+    this.score.update(dt);
+    const total = document.getElementById('score-counter');
+    if (total) total.textContent = this.score.score;
+    const popup = document.getElementById('combo-popup');
+    if (!popup) return;
+    const active = this.score.combo > 1 || (this.score.combo === 1 && this.shift.isNight);
+    popup.style.display = active ? 'block' : 'none';
+    if (active) {
+      popup.textContent = `COMBO ${this.score.combo}  x${this.score.multiplier}  +${this.score.lastPoints}`;
+      popup.style.opacity = String(Math.max(0.3, this.score.comboTimer / CONFIG.score.comboWindow));
+    }
+  }
+
+  showFinalScore() {
+    const { isNewBest, best } = this.score.saveBest();
+    const el = document.getElementById('gameover-score');
+    if (!el) return;
+    el.textContent = `SCORE ${this.score.score}  |  RANK ${this.score.rank}  |  BEST COMBO ${this.score.maxCombo}  |  `
+      + (isNewBest ? 'NEW BEST!' : `BEST ${best}`);
+  }
+
   resetWorld() {
+    this.score.reset();
     this.manualShiftCooldown = 0;
     this.clearExtraNightZombies();
     this.spawnQueue = [];
@@ -995,6 +1025,8 @@ export class Game {
   }
 
   win(endingData = null) {
+    this.score.addWinBonus((performance.now() - this.stats.startTime) / 1000);
+    this.showFinalScore();
     if (this.dialogue) this.dialogue.clear();
     this.state = GAME_STATES.WIN;
     this.stats.survivalTime = ((performance.now() - this.stats.startTime) / 1000).toFixed(1);
@@ -1037,6 +1069,7 @@ export class Game {
   }
 
   lose() {
+    this.showFinalScore();
     if (this.dialogue) this.dialogue.clear();
     this.state = GAME_STATES.LOSE;
     this.stats.survivalTime = ((performance.now() - this.stats.startTime) / 1000).toFixed(1);
@@ -1203,6 +1236,7 @@ export class Game {
       // Core world updates: day/night cycle, car physics, pickups
       this.shift.update(dt);
       this.updateManualShiftHUD(dt);
+      this.updateScoreHUD(dt);
       if (this.skyLighting) this.skyLighting.update(dt);
       this.vehicle.update(dt, this.input, this.city.colliders, this.zombies, this.shift.isNight);
       // While driving, the player travels with the car
